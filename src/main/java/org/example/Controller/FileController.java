@@ -1,7 +1,9 @@
 package org.example.Controller;
 
-import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
+import org.example.Handlers.HttpHandlers.CROSHandler;
+import org.example.Handlers.HttpHandlers.DownloadHandler;
+import org.example.Handlers.HttpHandlers.UploadHandler;
 import org.example.Service.FileSharer;
 
 import java.io.File;
@@ -15,6 +17,7 @@ public class FileController {
     private final HttpServer httpServer;
     private final String uploadPath;
     private final ExecutorService executorService;
+
 
     public FileController(int port) throws IOException {
         this.fileSharer = new FileSharer();
@@ -45,13 +48,4 @@ public class FileController {
         executorService.shutdownNow();
         System.out.println("Server Stopped");
     }
-
-    public class CROSHandler implements HttpHandler {
-        @Override
-        public void handle(com.sun.net.httpserver.HttpExchange httpExchange) throws IOException {
-            httpExchange.getResponseHeaders().add("Access-Control-Allow-Origin","*");
-            httpExchange.sendResponseHeaders(200,0);
-        }
-    }
-
 }
