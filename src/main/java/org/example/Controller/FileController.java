@@ -22,7 +22,7 @@ public class FileController {
     public FileController(int port) throws IOException {
         this.fileSharer = new FileSharer();
         this.httpServer = HttpServer.create(new InetSocketAddress(port),0);
-        this.uploadPath = System.getProperty("java.io,tmpdir")+ File.separator+"/peerlink-uploads";
+        this.uploadPath = System.getProperty("java.io,tmpdir")+ File.separator+"/p2p-uploads";
         this.executorService = Executors.newFixedThreadPool(10);
 
         File uploadDir = new File(uploadPath);
@@ -30,7 +30,7 @@ public class FileController {
             uploadDir.mkdirs();
         }
 
-        httpServer.createContext("/upload",new UploadHandler());
+        httpServer.createContext("/upload",new UploadHandler(uploadDir,fileSharer));
         httpServer.createContext("/download",new DownloadHandler());
         httpServer.createContext("/private",new CROSHandler());
         httpServer.setExecutor(executorService);

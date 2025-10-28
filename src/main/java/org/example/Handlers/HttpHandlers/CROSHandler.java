@@ -4,6 +4,7 @@ import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpHandler;
 
 import java.io.IOException;
+import java.io.OutputStream;
 
 public class CROSHandler implements HttpHandler {
     @Override
@@ -20,9 +21,8 @@ public class CROSHandler implements HttpHandler {
 
         String response = "NOT FOUND";
         httpExchange.sendResponseHeaders(404,response.getBytes().length);
-        if(httpExchange.getRequestHeaders().equals("POST")){}
-        if(httpExchange.getRequestHeaders().equals("OPTIONS")){}
-
-
+        try (OutputStream os = httpExchange.getResponseBody()) {
+            os.write(response.getBytes());
+        }
     }
 }

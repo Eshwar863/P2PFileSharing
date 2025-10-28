@@ -10,13 +10,13 @@ import java.util.HashMap;
 
 public class FileSharer {
 
-    private HashMap<Integer,String> avilableFiles;
+    private static HashMap<Integer,String> avilableFiles;
 
     public FileSharer() {
         avilableFiles = new HashMap<>();
     }
 
-    public int offerFile(String fileName){
+    public static int offerFile(String fileName){
         int port;
         while(true){
             port = UploadUtils.generatePort();
@@ -36,7 +36,7 @@ public class FileSharer {
         try (ServerSocket serverSocket = new ServerSocket(port)){
             System.out.println("Serving File"+new File(filePath) +" on port: "+port);
             Socket ClientSocket = serverSocket.accept();
-            System.out.println("Client connected on port: "+ClientSocket.getInetAddress() );
+            System.out.println("Client connected on port: "+ ClientSocket.getInetAddress() );
             new Thread(new FileSenderHandler(ClientSocket,filePath)).start();
         }
         catch (IOException e) {
