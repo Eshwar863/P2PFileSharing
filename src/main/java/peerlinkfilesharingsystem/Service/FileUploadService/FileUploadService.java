@@ -12,6 +12,7 @@ import peerlinkfilesharingsystem.Repo.FileTransferRepo;
 import peerlinkfilesharingsystem.Repo.IntelligentModelParametersRepo;
 import peerlinkfilesharingsystem.Repo.TransferMetricsRepo;
 import peerlinkfilesharingsystem.Service.CompressionService.FileCompressionService;
+import peerlinkfilesharingsystem.Service.FileStorageService;
 import peerlinkfilesharingsystem.Service.IntelligencePredictionService.IntelligencePredictionService;
 
 import java.io.*;
@@ -23,6 +24,7 @@ import java.util.UUID;
 @Slf4j
 public class FileUploadService {
 
+    private final FileStorageService fileStorageService;
     @Value("${file.storage.path:./uploads}")
     private String uploadDirectory;
 
@@ -37,12 +39,13 @@ public class FileUploadService {
                              IntelligencePredictionService intelligencePredictionService,
                              TransferMetricsRepo transferMetricsRepo,
                              FileCompressionService fileCompressionService,
-                             IntelligentModelParametersRepo intelligentModelParametersRepo) {
+                             IntelligentModelParametersRepo intelligentModelParametersRepo, FileStorageService fileStorageService) {
         this.fileTransferRepo = fileTransferRepo;
         this.intelligencePredictionService = intelligencePredictionService;
         this.transferMetricsRepo = transferMetricsRepo;
         this.compressionService = fileCompressionService;
         this.intelligentModelParametersRepo = intelligentModelParametersRepo;
+        this.fileStorageService = fileStorageService;
     }
 
     public FileUploadResponse handleFile(MultipartFile file, Integer latencyMs,
@@ -86,12 +89,12 @@ public class FileUploadService {
             fileTransferEntity.setCompressionLevel(params.getCompressionLevel());
             fileTransferEntity.setChunkSize(params.getChunkSize());
             fileTransferRepo.save(fileTransferEntity);
-
-            log.info("Starting compression process...");
+            String Userpath  = fileStorageService.createUserDirectory(String.valueOf(fileTransferEntity.getUserId()));
+            log.info("Starting compression process..."+ Userpath);
             long startTime = System.currentTimeMillis();
 
             CompressionResult compressionResult = processUploadWithCompression(
-                    file.getInputStream(), fileTransferEntity, params);
+                    file.getInputStream(),fileTransferEntity,Userpath);
 
             long duration = (System.currentTimeMillis() - startTime) / 1000;
 
@@ -107,7 +110,7 @@ public class FileUploadService {
             fileTransferEntity.setTransferDurationSeconds((int) duration);
             fileTransferEntity.setSuccess(true);
             fileTransferEntity.setCompletedAt(LocalDateTime.now());
-            fileTransferEntity.setStoragePath(uploadDirectory + "/" + transferId);
+            fileTransferEntity.setStoragePath(Userpath + "/" + transferId);
             fileTransferRepo.save(fileTransferEntity);
 
             log.info("Updating ML Model Parameters...");
@@ -150,7 +153,7 @@ public class FileUploadService {
 
     private CompressionResult processUploadWithCompression(InputStream fileInputStream,
                                                            FileTransferEntity transfer,
-                                                           IntelligencePredictionService.OptimizationParams params)
+                                                           String path)
             throws IOException {
 
         log.info("Starting file compression process...");
@@ -162,8 +165,8 @@ public class FileUploadService {
         }
 
         // Path for temporary original file
-        String tempOriginalPath = uploadDirectory + "/" + transfer.getTransferId() + ".tmp";
-        String finalCompressedPath = uploadDirectory + "/" + transfer.getTransferId();
+        String tempOriginalPath = path + "/" + transfer.getTransferId() + ".tmp";
+        String finalCompressedPath = path + "/" + transfer.getTransferId();
 
         // Step 1: Save original file temporarily
         log.info("Saving original file to temp location...");
@@ -185,8 +188,7 @@ public class FileUploadService {
         try {
             compressedFileSize = compressionService.compressFileToGzip(
                     tempOriginalPath,
-                    finalCompressedPath,
-                    params.getCompressionLevel());
+                    finalCompressedPath);
 
             double compressionRatio = (1.0 - (double) compressedFileSize / originalFileSize) * 100;
             log.info("Compression complete: {:.2f}% compression achieved", compressionRatio);
@@ -203,20 +205,6 @@ public class FileUploadService {
         transfer.setStoragePath(finalCompressedPath);
 
         return new CompressionResult(originalFileSize, compressedFileSize, 1);
-    }
-
-
-
-    private void recordChunkMetrics(FileTransferEntity transfer, int chunkNumber, int originalSize, int compressedSize) {
-        TransferMetricsEntity metrics = new TransferMetricsEntity();
-        metrics.setTransferId(transfer.getTransferId());
-        metrics.setChunkNumber(chunkNumber);
-        metrics.setOriginalChunkSize(originalSize);
-        metrics.setCompressedChunkSize(compressedSize);
-        metrics.setSuccess(true);
-        metrics.setRetryAttempt(0);
-
-        transferMetricsRepo.save(metrics);
     }
 
 

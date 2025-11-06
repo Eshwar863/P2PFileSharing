@@ -19,7 +19,7 @@ public class FileCompressionService {
      * - File integrity preserved
      * - Compatible with all tools (7zip, gunzip, WinRAR, etc)
      */
-    public long compressFileToGzip(String inputFilePath, String outputFilePath, Integer compressionLevel) throws IOException {
+    public long compressFileToGzip(String inputFilePath, String outputFilePath) throws IOException {
         log.info("Starting GZIP compression of entire file");
         log.info("  Input: {}", inputFilePath);
         log.info("  Output: {}", outputFilePath);
@@ -77,14 +77,4 @@ public class FileCompressionService {
     }
 
 
-    /**
-     * Compress chunk (for backward compatibility)
-     * But mark file as uncompressed in DB so we don't double-decompress
-     */
-    public byte[] compressChunk(byte[] buffer, int bytesRead, Integer compressionLevel) {
-        // For this implementation, we'll skip chunk compression
-        // Instead, we'll compress the entire file at once
-        log.warn("compressChunk called - returning uncompressed data. Use compressFileToGzip instead.");
-        return buffer;  // Return uncompressed
-    }
 }
