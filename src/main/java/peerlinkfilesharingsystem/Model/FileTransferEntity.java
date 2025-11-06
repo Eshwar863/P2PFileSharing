@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Data
@@ -26,6 +27,7 @@ public class FileTransferEntity {
     private String fileType;
     private Integer compressionLevel;
     private Integer chunkSize;
+    private Integer noOfChunksUploaded;
     private Double networkSpeedMbps;
     private Integer latencyMs;
     private Double packetLossPercentage;
@@ -36,7 +38,7 @@ public class FileTransferEntity {
     private String deviceType;
     @CreationTimestamp
     private LocalDateTime createdAt;
-
+    private Long userId;
     private LocalDateTime completedAt;
     private String storagePath;
     @Column(nullable = false)

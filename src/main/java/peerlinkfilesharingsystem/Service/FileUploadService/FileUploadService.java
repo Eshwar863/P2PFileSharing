@@ -17,7 +17,6 @@ import peerlinkfilesharingsystem.Service.IntelligencePredictionService.Intellige
 import java.io.*;
 import java.time.LocalDateTime;
 import java.util.Optional;
-import java.util.Random;
 import java.util.UUID;
 
 @Service
@@ -61,6 +60,7 @@ public class FileUploadService {
         try {
             FileTransferEntity fileTransferEntity = new FileTransferEntity();
             fileTransferEntity.setTransferId(transferId);
+            fileTransferEntity.setUserId(2313131L); /// replace it with Actual JWT userid
             fileTransferEntity.setFileName(filename);
             fileTransferEntity.setFileType(extension);
             fileTransferEntity.setDeviceType(deviceType);

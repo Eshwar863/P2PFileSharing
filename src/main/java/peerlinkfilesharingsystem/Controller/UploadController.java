@@ -48,7 +48,7 @@ public class UploadController {
             }
 
             System.out.println(file.toString());
-            if (file.getSize() > 10 * 1024 * 1024 * 1024L) {  // 5GB
+            if (file.getSize() > 10 * 1024 * 1024 * 1024L) {
                 return ResponseEntity.status(404).body(
                         FileUploadResponse.builder()
                                 .success(false)
