@@ -7,7 +7,6 @@ import org.springframework.web.multipart.MultipartFile;
 import peerlinkfilesharingsystem.Dto.FileUploadResponse;
 import peerlinkfilesharingsystem.Model.FileTransferEntity;
 import peerlinkfilesharingsystem.Model.IntelligentModelParametersEntity;
-import peerlinkfilesharingsystem.Model.TransferMetricsEntity;
 import peerlinkfilesharingsystem.Repo.FileTransferRepo;
 import peerlinkfilesharingsystem.Repo.IntelligentModelParametersRepo;
 import peerlinkfilesharingsystem.Repo.TransferMetricsRepo;
@@ -63,7 +62,7 @@ public class FileUploadService {
         try {
             FileTransferEntity fileTransferEntity = new FileTransferEntity();
             fileTransferEntity.setTransferId(transferId);
-            fileTransferEntity.setUserId(2313131L); /// replace it with Actual JWT userid
+            fileTransferEntity.setUserId(13131L); /// replace it with Actual JWT userid
             fileTransferEntity.setFileName(filename);
             fileTransferEntity.setFileType(extension);
             fileTransferEntity.setDeviceType(deviceType);

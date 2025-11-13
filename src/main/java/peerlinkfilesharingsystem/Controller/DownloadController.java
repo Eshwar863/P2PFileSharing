@@ -7,11 +7,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import peerlinkfilesharingsystem.Model.ChunkedDownloadResource;
 import peerlinkfilesharingsystem.Model.FileTransferEntity;
 import peerlinkfilesharingsystem.Service.FileDownloadService.FileDownloadService;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/files")
@@ -28,49 +30,71 @@ public class DownloadController {
     @GetMapping("/download/{transferId}")
     public ResponseEntity<?> downloadFile(
             @PathVariable String transferId,
+            @RequestHeader(value = "X-Network-Speed", defaultValue = "10.0") Double networkSpeedMbps,
+            @RequestHeader(value = "X-Latency-Ms", defaultValue = "50") Integer latencyMs,
+            @RequestHeader(value = "X-Device-Type", defaultValue = "DESKTOP") String deviceType,
             HttpServletRequest request) {
 
         String clientIp = request.getRemoteAddr();
+        String downloadId = UUID.randomUUID().toString();
+
         log.info("========== DOWNLOAD START ==========");
-        log.info("TransferId: {}, Client IP: {}", transferId, clientIp);
+        log.info("DownloadId: {}", downloadId);
+        log.info("TransferId: {}", transferId);
+        log.info("Client IP: {}", clientIp);
+        log.info("Network Speed: {} Mbps", networkSpeedMbps);
+        log.info("Latency: {} ms", latencyMs);
+        log.info("Device Type: {}", deviceType);
 
         try {
-            // Step 1: Fetch transfer metadata from database
             log.info("Fetching transfer metadata...");
             FileTransferEntity transfer = fileDownloadService.getTransferById(transferId);
 
             if (transfer == null) {
-                log.warn("Transfer not found - TransferId: {}", transferId);
+                log.warn("[{}] Transfer not found - TransferId: {}", downloadId, transferId);
                 return ResponseEntity.notFound().build();
             }
 
-            log.info("Transfer found:");
+            log.info("[{}] Transfer found:", downloadId);
             log.info("  Filename: {}", transfer.getFileName());
             log.info("  Original Size: {} bytes", transfer.getFileSize());
             log.info("  Compressed Size: {} bytes", transfer.getBytesTransferred());
-            log.info("  Storage Path: {}", transfer.getStoragePath());
 
-            log.info("Reading file from disk...");
-            InputStreamResource resource = fileDownloadService.downloadFile(transferId);
+            log.info("[{}] Calculating optimal download parameters...", downloadId);
+            ChunkedDownloadResource resource = fileDownloadService.downloadFileWithAdaptiveChunking(
+                    transferId,
+                    networkSpeedMbps,
+                    latencyMs
+            );
 
             if (resource == null) {
-                log.error("Failed to read file from disk");
+                log.error("[{}] Failed to create download resource", downloadId);
                 return ResponseEntity.status(500)
                         .body(buildErrorResponse("File not found on disk", "FILE_NOT_FOUND"));
             }
 
-            log.info("File read successfully");
+            log.info("[{}] Download resource created successfully", downloadId);
+            log.info("[{}] Adaptive Parameters Applied:", downloadId);
+            log.info("    Network Condition: {}", resource.getNetworkCondition());
+            log.info("    Chunk Size: {} bytes", resource.getChunkSize());
+            log.info("    Is Compressed: {}", resource.getIsCompressed());
 
-            log.info("Building download response...");
-            String downloadFileName = transfer.getFileName();
+            log.info("[{}] Building HTTP response...", downloadId);
+
+            InputStreamResource inputStreamResource = new InputStreamResource(resource.getInputStream());
 
             log.info("========== DOWNLOAD SUCCESS ==========");
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION,
-                            "attachment; filename=\"" + downloadFileName + "\"")
+                            "attachment; filename=\"" + resource.getFileName() + "\"")
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
-                    .body(resource);
+                    .header("X-Download-Id", downloadId)
+                    .header("X-Chunk-Size", String.valueOf(resource.getChunkSize()))
+                    .header("X-Network-Condition", resource.getNetworkCondition())
+                    .header("X-Original-Size", String.valueOf(resource.getOriginalSizeBytes()))
+                    .header("X-Compressed-Size", String.valueOf(resource.getCompressedSizeBytes()))
+                    .body(inputStreamResource);
 
         } catch (Exception e) {
             log.error("========== DOWNLOAD FAILED ==========", e);
@@ -80,7 +104,11 @@ public class DownloadController {
     }
 
     @GetMapping("/info/{transferId}")
-    public ResponseEntity<?> getTransferInfo(@PathVariable String transferId) {
+    public ResponseEntity<?> getTransferInfo(
+            @PathVariable String transferId,
+            @RequestParam(value = "networkSpeed", defaultValue = "10.0") Double networkSpeed,
+            @RequestParam(value = "latency", defaultValue = "50") Integer latency) {
+
         log.info("Fetching transfer info for: {}", transferId);
 
         try {

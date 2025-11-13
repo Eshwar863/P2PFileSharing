@@ -3,8 +3,10 @@ package peerlinkfilesharingsystem.Service.FileDownloadService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.stereotype.Service;
+import peerlinkfilesharingsystem.Model.ChunkedDownloadResource;
 import peerlinkfilesharingsystem.Model.FileTransferEntity;
 import peerlinkfilesharingsystem.Repo.FileTransferRepo;
+import peerlinkfilesharingsystem.Service.IntelligencePredictionService.IntelligencePredictionService;
 
 import java.io.*;
 import java.util.Optional;
@@ -15,22 +17,20 @@ import java.util.zip.GZIPInputStream;
 public class FileDownloadService {
 
     private FileTransferRepo fileTransferRepo;
+    private IntelligencePredictionService intelligencePredictionService;
 
-    // GZIP magic number: 0x1f8b
-    /// loading diff diff chunks and on concatinating them failed to construct the file
-    /// File is not readable
     private static final int GZIP_MAGIC_BYTE_1 = 0x1f;
     private static final int GZIP_MAGIC_BYTE_2 = 0x8b;
 
-    public FileDownloadService(FileTransferRepo fileTransferRepo) {
+    public FileDownloadService(
+            FileTransferRepo fileTransferRepo,
+            IntelligencePredictionService intelligencePredictionService) {
         this.fileTransferRepo = fileTransferRepo;
-
+        this.intelligencePredictionService = intelligencePredictionService;
     }
 
 
-///     Get transfer record by transferId from database
-
-public FileTransferEntity getTransferById(String transferId) {
+    public FileTransferEntity getTransferById(String transferId) {
         log.info("Querying database for transferId: {}", transferId);
 
         try {
@@ -54,8 +54,6 @@ public FileTransferEntity getTransferById(String transferId) {
     }
 
 
-///     Check if file is GZIP compressed by reading magic bytes
-
     private boolean isGzipCompressed(File file) {
         try (FileInputStream fis = new FileInputStream(file)) {
             byte[] header = new byte[2];
@@ -74,22 +72,29 @@ public FileTransferEntity getTransferById(String transferId) {
         }
     }
 
+    private String getFileExtension(String fileName) {
+        if (fileName == null || fileName.lastIndexOf(".") == -1) {
+            return "";
+        }
+        return fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
+    }
+
     /**
-     * Download file and decompress it on-the-fly if it's compressed
+     * Download file with intelligent chunking based on network conditions
      *
-     * WHAT THIS DOES:
-     * 1. Check if file is GZIP compressed
-     * 2. If compressed: create GZIPInputStream to decompress as we read
-     * 3. If not compressed: stream file as-is
-     * 4. Stream data to user
-     *
-     * WHY:
-     * - User receives correct file (decompressed if needed)
-     * - Memory efficient (streams, doesn't load entire file)
-     * - Handles both compressed and uncompressed files
+     * Features:
+     * 1. Calculates optimal chunk size based on network speed & latency
+     * 2. Decompresses GZIP files on-the-fly if needed
+     * 3. Streams data efficiently to avoid memory issues
+     * 4. Logs progress metrics
      */
-    public InputStreamResource downloadFile(String transferId) {
-        log.info("Downloading file for transferId: {}", transferId);
+
+    public ChunkedDownloadResource downloadFileWithAdaptiveChunking(
+            String transferId,
+            Double networkSpeedMbps,
+            Integer latencyMs) {
+
+        log.info("Starting adaptive chunked download for transferId: {}", transferId);
 
         try {
             Optional<FileTransferEntity> transferOpt = fileTransferRepo.findByTransferId(transferId);
@@ -102,58 +107,162 @@ public FileTransferEntity getTransferById(String transferId) {
             FileTransferEntity transfer = transferOpt.get();
             String storagePath = transfer.getStoragePath();
 
-            log.info("Storage path: {}", storagePath);
-
             File file = new File(storagePath);
 
-            if (!file.exists()) {
-                log.error("File not found on disk at path: {}", storagePath);
+            if (!file.exists() || !file.isFile()) {
+                log.error("File not found or invalid path: {}", storagePath);
                 return null;
             }
 
-            if (!file.isFile()) {
-                log.error("Path is not a file: {}", storagePath);
-                return null;
-            }
+            log.info("File found on disk - Size: {} bytes", file.length());
 
-            log.info("File found on disk:");
-            log.info("  File Size: {} bytes", file.length());
-            log.info("  Original Size: {} bytes", transfer.getFileSize());
-            log.info("  Can read: {}", file.canRead());
-
-            // Step 3: Check if file is GZIP compressed
+            // Check if file is GZIP compressed
             boolean isCompressed = isGzipCompressed(file);
             log.info("File is {} compressed", isCompressed ? "GZIP" : "NOT");
 
-            // Step 4: Create appropriate input stream
-            try {
-                FileInputStream fileInputStream = new FileInputStream(file);
-                InputStream inputStream;
+            // Get file extension
+            String extension = getFileExtension(transfer.getFileName());
 
-                if (isCompressed) {
-                    // Wrap in GZIPInputStream to decompress
-                    inputStream = new GZIPInputStream(fileInputStream);
-                    log.info("GZIPInputStream created - file will be decompressed during download");
-                } else {
-                    // Use file directly without decompression
-                    inputStream = fileInputStream;
-                    log.info("File is not compressed - streaming as-is");
-                }
+            // Predict optimal parameters based on network conditions
+            IntelligencePredictionService.OptimizationParams optimizationParams =
+                    intelligencePredictionService.predictOptimalParameters(
+                            transfer.getFileName(),
+                            extension,
+                            networkSpeedMbps,
+                            latencyMs,
+                            transfer.getFileSize()
+                    );
 
-                // Wrap in InputStreamResource for HTTP response
-                InputStreamResource resource = new InputStreamResource(inputStream);
-                log.info("InputStreamResource created for streaming data");
+            log.info("Optimization Parameters:");
+            log.info("  Network Condition: {}", optimizationParams.getNetworkCondition());
+            log.info("  Chunk Size: {} bytes", optimizationParams.getChunkSize());
+            log.info("  Compression Level: {}", optimizationParams.getCompressionLevel());
 
-                return resource;
+            // Create chunked input stream
+            InputStream baseInputStream = new FileInputStream(file);
 
-            } catch (IOException e) {
-                log.error("Error creating input stream", e);
+            if (isCompressed) {
+                baseInputStream = new GZIPInputStream(baseInputStream);
+                log.info("GZIPInputStream created - file will be decompressed");
+            }
+
+            // Wrap in chunked resource with adaptive chunk size
+            ChunkedInputStream chunkedInputStream = new ChunkedInputStream(
+                    baseInputStream,
+                    optimizationParams.getChunkSize(),
+                    transfer.getFileName()
+            );
+
+            return ChunkedDownloadResource.builder()
+                    .inputStream(chunkedInputStream)
+                    .fileName(transfer.getFileName())
+                    .originalSizeBytes(transfer.getFileSize())
+                    .compressedSizeBytes(transfer.getBytesTransferred())
+                    .chunkSize(optimizationParams.getChunkSize())
+                    .networkCondition(optimizationParams.getNetworkCondition())
+                    .isCompressed(isCompressed)
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Error in adaptive download for transferId: {}", transferId, e);
+            return null;
+        }
+    }
+
+    public InputStreamResource downloadFile(String transferId) {
+        log.info("Downloading file (legacy method) for transferId: {}", transferId);
+
+        try {
+            Optional<FileTransferEntity> transferOpt = fileTransferRepo.findByTransferId(transferId);
+
+            if (transferOpt.isEmpty()) {
+                log.error("Transfer not found: {}", transferId);
                 return null;
             }
 
+            FileTransferEntity transfer = transferOpt.get();
+            String storagePath = transfer.getStoragePath();
+
+            File file = new File(storagePath);
+
+            if (!file.exists() || !file.isFile()) {
+                log.error("File not found: {}", storagePath);
+                return null;
+            }
+
+            boolean isCompressed = isGzipCompressed(file);
+            log.info("File is {} compressed", isCompressed ? "GZIP" : "NOT");
+
+            FileInputStream fileInputStream = new FileInputStream(file);
+            InputStream inputStream;
+
+            if (isCompressed) {
+                inputStream = new GZIPInputStream(fileInputStream);
+            } else {
+                inputStream = fileInputStream;
+            }
+
+            return new InputStreamResource(inputStream);
+
         } catch (Exception e) {
-            log.error("Error downloading file for transferId: {}", transferId, e);
+            log.error("Error downloading file", e);
             return null;
+        }
+    }
+
+
+    @Slf4j
+    public static class ChunkedInputStream extends InputStream {
+        private final InputStream delegate;
+        private final int chunkSize;
+        private final String fileName;
+        private final byte[] buffer;
+        private long totalBytesRead = 0;
+        private long startTime;
+        private int chunkCount = 0;
+
+        public ChunkedInputStream(InputStream delegate, int chunkSize, String fileName) {
+            this.delegate = delegate;
+            this.chunkSize = chunkSize;
+            this.fileName = fileName;
+            this.buffer = new byte[chunkSize];
+            this.startTime = System.currentTimeMillis();
+        }
+
+        @Override
+        public int read() throws IOException {
+            int byte_ = delegate.read();
+            if (byte_ != -1) {
+                totalBytesRead++;
+            }
+            return byte_;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            int bytesRead = delegate.read(b, off, Math.min(len, chunkSize));
+            if (bytesRead > 0) {
+                totalBytesRead += bytesRead;
+                chunkCount++;
+
+                // Log every 10 chunks
+                if (chunkCount % 10 == 0) {
+                    long elapsed = System.currentTimeMillis() - startTime;
+                    double speedMbps = (totalBytesRead * 8.0) / (elapsed * 1000.0);
+                    log.info("Download Progress - File: {}, Chunk: {}, Total: {} MB, Speed: {:.2f} Mbps",
+                            fileName, chunkCount, totalBytesRead / (1024 * 1024), speedMbps);
+                }
+            }
+            return bytesRead;
+        }
+
+        @Override
+        public void close() throws IOException {
+            long totalTime = System.currentTimeMillis() - startTime;
+            double avgSpeedMbps = (totalBytesRead * 8.0) / (totalTime * 1000.0);
+            log.info("Download Complete - File: {}, Total: {} MB, Time: {}ms, Avg Speed: {:.2f} Mbps, Chunks: {}",
+                    fileName, totalBytesRead / (1024 * 1024), totalTime, avgSpeedMbps, chunkCount);
+            delegate.close();
         }
     }
 }
