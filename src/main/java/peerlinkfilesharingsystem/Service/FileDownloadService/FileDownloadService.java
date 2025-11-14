@@ -169,6 +169,8 @@ public class FileDownloadService {
         }
     }
 
+
+
     public InputStreamResource downloadFile(String transferId) {
         log.info("Downloading file (legacy method) for transferId: {}", transferId);
 
@@ -240,7 +242,7 @@ public class FileDownloadService {
 
         @Override
         public int read(byte[] b, int off, int len) throws IOException {
-            int bytesRead = delegate.read(b, off, Math.min(len, chunkSize));
+            int bytesRead = delegate.read(b, off, Math.min(len, this.chunkSize));
             if (bytesRead > 0) {
                 totalBytesRead += bytesRead;
                 chunkCount++;

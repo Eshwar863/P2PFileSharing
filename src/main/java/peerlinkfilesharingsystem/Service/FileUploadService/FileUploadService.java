@@ -13,9 +13,12 @@ import peerlinkfilesharingsystem.Repo.TransferMetricsRepo;
 import peerlinkfilesharingsystem.Service.CompressionService.FileCompressionService;
 import peerlinkfilesharingsystem.Service.FileStorageService;
 import peerlinkfilesharingsystem.Service.IntelligencePredictionService.IntelligencePredictionService;
+import peerlinkfilesharingsystem.Service.Redis.RedisUploadService;
 
 import java.io.*;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -24,6 +27,7 @@ import java.util.UUID;
 public class FileUploadService {
 
     private final FileStorageService fileStorageService;
+    private final RedisUploadService redisUploadService;
     @Value("${file.storage.path:./uploads}")
     private String uploadDirectory;
 
@@ -38,13 +42,15 @@ public class FileUploadService {
                              IntelligencePredictionService intelligencePredictionService,
                              TransferMetricsRepo transferMetricsRepo,
                              FileCompressionService fileCompressionService,
-                             IntelligentModelParametersRepo intelligentModelParametersRepo, FileStorageService fileStorageService) {
+                             IntelligentModelParametersRepo intelligentModelParametersRepo, FileStorageService fileStorageService,
+                             RedisUploadService redisUploadService) {
         this.fileTransferRepo = fileTransferRepo;
         this.intelligencePredictionService = intelligencePredictionService;
         this.transferMetricsRepo = transferMetricsRepo;
         this.compressionService = fileCompressionService;
         this.intelligentModelParametersRepo = intelligentModelParametersRepo;
         this.fileStorageService = fileStorageService;
+        this.redisUploadService = redisUploadService;
     }
 
     public FileUploadResponse handleFile(MultipartFile file, Integer latencyMs,
@@ -93,7 +99,7 @@ public class FileUploadService {
             long startTime = System.currentTimeMillis();
 
             CompressionResult compressionResult = processUploadWithCompression(
-                    file.getInputStream(),fileTransferEntity,Userpath);
+                    file.getInputStream(),fileTransferEntity,Userpath,params);
 
             long duration = (System.currentTimeMillis() - startTime) / 1000;
 
@@ -152,7 +158,8 @@ public class FileUploadService {
 
     private CompressionResult processUploadWithCompression(InputStream fileInputStream,
                                                            FileTransferEntity transfer,
-                                                           String path)
+                                                           String path,
+                                                           IntelligencePredictionService.OptimizationParams params)
             throws IOException {
 
         log.info("Starting file compression process...");
@@ -171,7 +178,8 @@ public class FileUploadService {
         log.info("Saving original file to temp location...");
         long originalFileSize = 0;
         try (FileOutputStream tempFos = new FileOutputStream(tempOriginalPath)) {
-            byte[] buffer = new byte[8192];
+            int optimalBufferSize = params.getChunkSize();
+            byte[] buffer = new byte[optimalBufferSize];
             int bytesRead;
             while ((bytesRead = fileInputStream.read(buffer)) != -1) {
                 tempFos.write(buffer, 0, bytesRead);
@@ -261,6 +269,10 @@ public class FileUploadService {
         return "unknown";
     }
 
+    public List<FileTransferEntity> getRecentTransfers(Integer limit) {
+        return fileTransferRepo.findLastUploads(limit);
+    }
+
     private static class CompressionResult {
         long totalBytesRead;
         long totalBytesCompressed;
@@ -270,6 +282,57 @@ public class FileUploadService {
             this.totalBytesRead = totalBytesRead;
             this.totalBytesCompressed = totalBytesCompressed;
             this.chunkCount = chunkCount;
+        }
+    }
+    public FileUploadResponse resumeUpload(String transferId, Long userId) {
+        log.info("===== RESUME UPLOAD START =====");
+        log.info("TransferId: {}, UserId: {}", transferId, userId);
+
+        try {
+            // Step 1: Check if session exists in Redis
+            if (!redisUploadService.sessionExists(transferId)) {
+                log.error("Session not found in Redis: {}", transferId);
+                return FileUploadResponse.builder()
+                        .success(false)
+                        .message("Upload session not found. Cannot resume.")
+                        .build();
+            }
+
+            // Step 2: Get session info
+            Map<Object, Object> sessionInfo = redisUploadService.getSessionInfo(transferId);
+            String fileName = sessionInfo.get("fileName").toString();
+            long totalChunks = Long.parseLong(sessionInfo.get("totalChunks").toString());
+
+            log.info("Session found for: {}", fileName);
+            log.info("Total chunks: {}, Already uploaded: {}",
+                    totalChunks, redisUploadService.getUploadedChunkCount(transferId));
+
+            // Step 3: Change status to IN_PROGRESS
+            redisUploadService.resumeUpload(transferId);
+
+            // Step 4: Get missing chunks to inform client
+            List<Integer> missingChunks = redisUploadService.getMissingChunks(transferId);
+
+            double progress = redisUploadService.getUploadProgress(transferId);
+
+            log.info("===== RESUME UPLOAD READY =====");
+            log.info("Progress: {:.2f}%", progress);
+            log.info("Missing chunks to upload: {}", missingChunks.size());
+
+            return FileUploadResponse.builder()
+                    .transferId(transferId)
+                    .fileName(fileName)
+                    .success(true)
+                    .message(String.format("Upload resumed. Progress: %.2f%%. Resume upload from chunk %d",
+                            progress, missingChunks.isEmpty() ? -1 : missingChunks.get(0)))
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Resume failed", e);
+            return FileUploadResponse.builder()
+                    .success(false)
+                    .message("Resume failed: " + e.getMessage())
+                    .build();
         }
     }
 
