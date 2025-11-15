@@ -19,10 +19,12 @@ import java.time.LocalDateTime;
         private String compressionRatioPercent;
         private Integer appliedCompressionLevel;
         private Integer appliedChunkSize;
+        private Integer totalChunks;
+        private Integer uploadedChunks;
+        private String uploadStatus;
         private Boolean success;
         private String message;
         private String resumeToken;
         private LocalDateTime uploadedAt;
-        private LocalDateTime completedAt;
 
 }

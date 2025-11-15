@@ -77,4 +77,24 @@ public class FileCompressionService {
     }
 
 
+
+
+
+
+
+
+
+
+    private static class CompressionResult {
+        long totalBytesRead;
+        long totalBytesCompressed;
+        int chunkCount;
+
+        CompressionResult(long totalBytesRead, long totalBytesCompressed, int chunkCount) {
+            this.totalBytesRead = totalBytesRead;
+            this.totalBytesCompressed = totalBytesCompressed;
+            this.chunkCount = chunkCount;
+        }
+    }
+
 }

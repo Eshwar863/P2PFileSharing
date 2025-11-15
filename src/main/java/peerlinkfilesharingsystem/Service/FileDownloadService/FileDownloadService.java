@@ -1,7 +1,6 @@
 package peerlinkfilesharingsystem.Service.FileDownloadService;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.InputStreamResource;
 import org.springframework.stereotype.Service;
 import peerlinkfilesharingsystem.Model.ChunkedDownloadResource;
 import peerlinkfilesharingsystem.Model.FileTransferEntity;
@@ -171,46 +170,7 @@ public class FileDownloadService {
 
 
 
-    public InputStreamResource downloadFile(String transferId) {
-        log.info("Downloading file (legacy method) for transferId: {}", transferId);
 
-        try {
-            Optional<FileTransferEntity> transferOpt = fileTransferRepo.findByTransferId(transferId);
-
-            if (transferOpt.isEmpty()) {
-                log.error("Transfer not found: {}", transferId);
-                return null;
-            }
-
-            FileTransferEntity transfer = transferOpt.get();
-            String storagePath = transfer.getStoragePath();
-
-            File file = new File(storagePath);
-
-            if (!file.exists() || !file.isFile()) {
-                log.error("File not found: {}", storagePath);
-                return null;
-            }
-
-            boolean isCompressed = isGzipCompressed(file);
-            log.info("File is {} compressed", isCompressed ? "GZIP" : "NOT");
-
-            FileInputStream fileInputStream = new FileInputStream(file);
-            InputStream inputStream;
-
-            if (isCompressed) {
-                inputStream = new GZIPInputStream(fileInputStream);
-            } else {
-                inputStream = fileInputStream;
-            }
-
-            return new InputStreamResource(inputStream);
-
-        } catch (Exception e) {
-            log.error("Error downloading file", e);
-            return null;
-        }
-    }
 
 
     @Slf4j

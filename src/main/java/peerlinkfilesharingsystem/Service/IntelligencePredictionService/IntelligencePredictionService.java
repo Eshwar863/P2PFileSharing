@@ -23,15 +23,10 @@ public class IntelligencePredictionService {
     private FileTransferRepo fileTransferRepo;
 
     private static final Set<String> PRECOMPRESSED_FORMATS = Set.of(
-            // Video formats
             "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm",
-            // Image formats
             "jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp", "psd",
-            // Audio formats
             "mp3", "wav", "wma", "flac", "aac", "ogg",
-            // Archive formats
             "zip", "rar", "7z", "gz", "tar", "bz2",
-            // Fonts
             "ttf", "otf", "woff", "woff2"
     );
 
@@ -43,28 +38,43 @@ public class IntelligencePredictionService {
 
     public OptimizationParams predictOptimalParameters(
             String fileName,
-            String extention,
+            String extension,
             Double networkSpeedMbps,
             Integer latencyMs,
             Long fileSizeBytes) {
 
         String networkCondition = classifyNetworkCondition(networkSpeedMbps, latencyMs);
 
-        boolean isAlreadyCompressed = PRECOMPRESSED_FORMATS.contains(extention);
-        boolean isTextFile = TEXT_FORMATS.contains(extention);
+        boolean isAlreadyCompressed = PRECOMPRESSED_FORMATS.contains(extension);
+        boolean isTextFile = TEXT_FORMATS.contains(extension);
 
         Optional<IntelligentModelParametersEntity> learnedParams =
-                intelligentModelParametersRepo.findByFileTypeAndNetworkCondition(extention, networkCondition);
+                intelligentModelParametersRepo.findByFileTypeAndNetworkCondition(extension, networkCondition);
+
+        OptimizationParams params;
 
         if (learnedParams.isPresent()) {
-            return buildFromLearned(learnedParams.get(), isAlreadyCompressed);
+            params = buildFromLearned(learnedParams.get(), isAlreadyCompressed, fileSizeBytes);
+        } else {
+            params = predictUsingRules(extension, networkSpeedMbps, latencyMs,
+                    isAlreadyCompressed, isTextFile, fileSizeBytes);
         }
-        else {
-            return predictUsingRules(extention, networkSpeedMbps, latencyMs, isAlreadyCompressed, isTextFile, fileSizeBytes);
-        }
+
+        log.info("Optimization Params - File: {}, Chunks: {}, ChunkSize: {} KB, Compression: {}",
+                fileName, params.getTotalChunks(), params.getChunkSize() / 1024,
+                params.getCompressionLevel());
+
+        return params;
     }
 
-    private OptimizationParams predictUsingRules(String fileType, Double networkSpeedMbps, Integer latencyMs, boolean isAlreadyCompressed, boolean isTextFile, Long fileSizeBytes) {
+    private OptimizationParams predictUsingRules(
+            String fileType,
+            Double networkSpeedMbps,
+            Integer latencyMs,
+            boolean isAlreadyCompressed,
+            boolean isTextFile,
+            Long fileSizeBytes) {
+
         int compressionLevel;
         int chunkSize;
 
@@ -100,6 +110,8 @@ public class IntelligencePredictionService {
 
         int timeSavingPercent = isAlreadyCompressed ? 10 : (int) (50 * compressionLevel / 9);
 
+        Integer totalChunks = calculateTotalChunks(fileSizeBytes, chunkSize);
+
         return OptimizationParams.builder()
                 .compressionLevel(compressionLevel)
                 .chunkSize(chunkSize)
@@ -107,6 +119,7 @@ public class IntelligencePredictionService {
                 .networkCondition(classifyNetworkCondition(networkSpeedMbps, latencyMs))
                 .estimatedTimeSavingPercent(timeSavingPercent)
                 .predictedSuccessRate(0.96)
+                .totalChunks(totalChunks)
                 .build();
     }
 
@@ -117,8 +130,15 @@ public class IntelligencePredictionService {
         else return "FAST";
     }
 
-    private OptimizationParams buildFromLearned(IntelligentModelParametersEntity learned, boolean isAlreadyCompressed) {
+    private OptimizationParams buildFromLearned(
+            IntelligentModelParametersEntity learned,
+            boolean isAlreadyCompressed,
+            Long fileSizeBytes) {
+
         int compression = isAlreadyCompressed ? 1 : learned.getOptimalCompressionLevel();
+
+        Integer totalChunks = calculateTotalChunks(fileSizeBytes, learned.getOptimalChunkSize());
+
         return OptimizationParams.builder()
                 .compressionLevel(compression)
                 .chunkSize(learned.getOptimalChunkSize())
@@ -127,16 +147,27 @@ public class IntelligencePredictionService {
                 .estimatedTimeSavingPercent(
                         (int) ((1.0 - (1.0 / learned.getSuccessRate())) * 100))
                 .predictedSuccessRate(learned.getSuccessRate())
+                .totalChunks(totalChunks)
                 .build();
     }
 
+    private Integer calculateTotalChunks(Long fileSizeBytes, Integer chunkSize) {
+        if (fileSizeBytes == null || chunkSize == null || chunkSize == 0) {
+            log.warn("Invalid parameters for chunk calculation - FileSize: {}, ChunkSize: {}",
+                    fileSizeBytes, chunkSize);
+            return 0;
+        }
 
+        Integer chunks = Math.toIntExact((fileSizeBytes + chunkSize - 1) / chunkSize);
 
+        log.debug("Calculated {} chunks for {} bytes with chunk size {} bytes",
+                chunks, fileSizeBytes, chunkSize);
 
-
+        return chunks;
+    }
 
     @Data
-     @Builder
+    @Builder
     public static class OptimizationParams {
         private Integer compressionLevel;
         private Integer chunkSize;
@@ -144,5 +175,6 @@ public class IntelligencePredictionService {
         private String networkCondition;
         private Integer estimatedTimeSavingPercent;
         private Double predictedSuccessRate;
+        private Integer totalChunks;
     }
 }
