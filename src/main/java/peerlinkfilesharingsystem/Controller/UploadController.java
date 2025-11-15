@@ -169,17 +169,15 @@ public class UploadController {
                 FileUploadResponse response = fileUploadService.handleFile(
                         file, latencyMs, networkSpeedMbps, deviceType, clientIp);
 
+
+
                 if (response.getSuccess()) {
-                    // Mark all chunks as uploaded in Redis
+                    // Calculate total chunks
                     long totalChunksFromDB = (file.getSize() + response.getAppliedChunkSize() - 1)
                             / response.getAppliedChunkSize();
 
-                    for (int i = 0; i < totalChunksFromDB; i++) {
-                        redisUploadService.markChunkUploaded(resumeId, i);
-                    }
-
-                    // Mark as complete in Redis
-                    redisUploadService.markUploadComplete(resumeId);
+                    // ✅ NEW: Mark ALL chunks at once in BATCH (1 operation instead of 5200!)
+                    redisUploadService.markUploadCompleteWithAllChunks(resumeId, totalChunksFromDB);
 
                     log.info("[{}] Upload RESUMED and COMPLETED: {}", correlationId, resumeId);
 
@@ -207,6 +205,7 @@ public class UploadController {
                         ));
                     }
                 }
+
             }
 
             // ========== CASE 3: NEW upload ==========
@@ -215,7 +214,6 @@ public class UploadController {
                 log.info("[{}] NEW upload started - ID: {}, File: {}",
                         correlationId, uploadId, file.getOriginalFilename());
 
-                // Get optimal chunk size for this network
                 int chunkSize = fileUploadService.getOptimalChunkSize(
                         file.getOriginalFilename(), networkSpeedMbps, latencyMs, file.getSize());
 
@@ -231,18 +229,11 @@ public class UploadController {
                 log.info("[{}] Redis session created for upload: {}", correlationId, uploadId);
 
                 try {
-                    // Perform upload
                     FileUploadResponse response = fileUploadService.handleFile(
                             file, latencyMs, networkSpeedMbps, deviceType, clientIp);
 
                     if (response.getSuccess()) {
-                        // Mark all chunks as uploaded in Redis
-                        for (int i = 0; i < totalChunks; i++) {
-                            redisUploadService.markChunkUploaded(uploadId, i);
-                        }
-
-                        // Mark as complete in Redis
-                        redisUploadService.markUploadComplete(uploadId);
+                        redisUploadService.markUploadCompleteWithAllChunks(uploadId, totalChunks);
 
                         log.info("[{}] Upload SUCCESS: {}", correlationId, uploadId);
 
@@ -274,7 +265,6 @@ public class UploadController {
                 } catch (Exception uploadException) {
                     log.error("[{}] Upload exception: {}", correlationId, uploadException.getMessage());
 
-                    // Mark as failed with resume capability
                     FileTransferEntity transfer = fileTransferRepo
                             .findByTransferId(uploadId).orElse(null);
 
@@ -292,6 +282,7 @@ public class UploadController {
                     ));
                 }
             }
+
 
         } catch (Exception e) {
             log.error("[{}] Unexpected error in upload endpoint", correlationId, e);
@@ -322,12 +313,10 @@ public class UploadController {
             var transfers = fileUploadService.getRecentTransfers(limit);
 
             if (includeRedisMetadata) {
-                // Enhance each transfer with Redis metadata
                 return ResponseEntity.ok(transfers.stream().map(transfer -> {
                     Map<String, Object> enhanced = new HashMap<>();
                     enhanced.put("transfer", transfer);
 
-                    // Get Redis session if exists
                     if (redisUploadService.sessionExists(transfer.getTransferId())) {
                         Map<Object, Object> sessionInfo =
                                 redisUploadService.getSessionInfo(transfer.getTransferId());

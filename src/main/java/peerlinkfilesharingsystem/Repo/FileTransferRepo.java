@@ -14,9 +14,14 @@ import java.util.UUID;
 public interface FileTransferRepo extends JpaRepository<FileTransferEntity,UUID> {
     Optional<FileTransferEntity> findByTransferId(String transferId);
 
-    @Query(value = "SELECT * FROM file_transfer ORDER BY id DESC LIMIT :limit",
+    @Query(value = "SELECT * FROM file_transfer_entity " +
+            "WHERE user_id = :userId " +
+            "ORDER BY file_id DESC " +
+            "LIMIT :limit",
             nativeQuery = true)
-    List<FileTransferEntity> findLastUploads(@Param("limit") int limit);
+    List<FileTransferEntity> findLastUploads(@Param("userId") String userId,
+                                             @Param("limit") int limit);
+
 
     Optional<FileTransferEntity> findByResumeToken(String resumeToken);
 

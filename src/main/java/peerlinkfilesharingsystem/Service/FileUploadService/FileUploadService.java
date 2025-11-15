@@ -279,7 +279,8 @@ public class FileUploadService {
     }
 
     public List<FileTransferEntity> getRecentTransfers(Integer limit) {
-        return fileTransferRepo.findLastUploads(limit);
+        String userId = "13131";
+        return fileTransferRepo.findLastUploads(userId,limit);
     }
 
     public ResponseEntity<?> getResumableFiles() {
