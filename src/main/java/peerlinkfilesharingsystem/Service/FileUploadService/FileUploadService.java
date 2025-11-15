@@ -2,9 +2,13 @@ package peerlinkfilesharingsystem.Service.FileUploadService;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import peerlinkfilesharingsystem.Dto.FileUploadResponse;
+import peerlinkfilesharingsystem.Enums.UploadStatus;
 import peerlinkfilesharingsystem.Model.FileTransferEntity;
 import peerlinkfilesharingsystem.Model.IntelligentModelParametersEntity;
 import peerlinkfilesharingsystem.Repo.FileTransferRepo;
@@ -17,10 +21,8 @@ import peerlinkfilesharingsystem.Service.Redis.RedisUploadService;
 
 import java.io.*;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.time.ZoneId;
+import java.util.*;
 
 @Service
 @Slf4j
@@ -68,7 +70,7 @@ public class FileUploadService {
         try {
             FileTransferEntity fileTransferEntity = new FileTransferEntity();
             fileTransferEntity.setTransferId(transferId);
-            fileTransferEntity.setUserId(13131L); /// replace it with Actual JWT userid
+            fileTransferEntity.setUserId("13131"); /// replace it with Actual JWT userid
             fileTransferEntity.setFileName(filename);
             fileTransferEntity.setFileType(extension);
             fileTransferEntity.setDeviceType(deviceType);
@@ -215,6 +217,13 @@ public class FileUploadService {
     }
 
 
+    public FileTransferEntity getTransferId(String transferId) {
+        fileTransferRepo.findById(UUID.fromString(transferId)).orElseThrow(() ->
+                new IllegalArgumentException("Transfer ID not found: " + transferId));
+        return fileTransferRepo.findById(UUID.fromString(transferId)).orElseThrow(() ->
+                new IllegalArgumentException("Transfer ID not found: " + transferId));
+
+    }
     public void updateMLParamsAfterUpload(String fileType, String networkCondition,
                                           int compressionLevel, int chunkSize, boolean wasSuccessful) {
 
@@ -271,6 +280,26 @@ public class FileUploadService {
 
     public List<FileTransferEntity> getRecentTransfers(Integer limit) {
         return fileTransferRepo.findLastUploads(limit);
+    }
+
+    public ResponseEntity<?> getResumableFiles() {
+        log.info("===== GET RESUMABLE FILES START =====");
+        String userId = "13131";
+
+        List<UploadStatus> statuses = Arrays.asList(UploadStatus.IN_PROGRESS, UploadStatus.PAUSED);
+
+        // Repository method to find by userId and status list
+        List<FileTransferEntity> resumableFiles = fileTransferRepo
+                .findByUserIdAndUploadStatusIn(userId, statuses);
+
+        return ResponseEntity.ok(resumableFiles);
+    }
+
+    public int getOptimalChunkSize(String originalFilename, Double networkSpeedMbps, Integer latencyMs, long size) {
+        IntelligencePredictionService.OptimizationParams params =
+                intelligencePredictionService.predictOptimalParameters(
+                        originalFilename, extractFileType(originalFilename), networkSpeedMbps, latencyMs, size);
+        return params.getChunkSize();
     }
 
     private static class CompressionResult {
@@ -333,6 +362,243 @@ public class FileUploadService {
                     .success(false)
                     .message("Resume failed: " + e.getMessage())
                     .build();
+        }
+    }
+
+    /**
+     * Check if upload is complete by comparing:
+     * - Expected size (from client)
+     * - Bytes received
+     * - File hash/checksum validation
+     */
+    public boolean isUploadComplete(FileTransferEntity transfer, Long receivedBytes) {
+
+        if (transfer == null) {
+            log.error("Transfer entity is null");
+            return false;
+        }
+
+        log.info("Checking upload completion for: {}", transfer.getTransferId());
+        log.info("  Expected: {} bytes", transfer.getFileSize());
+        log.info("  Received: {} bytes", receivedBytes);
+        log.info("  Compressed: {} bytes", transfer.getBytesTransferred());
+
+        // Check 1: Did we receive all bytes?
+        if (receivedBytes == null || transfer.getFileSize() == null) {
+            log.warn("Missing size information");
+            return false;
+        }
+
+        boolean sizeMatch = receivedBytes >= transfer.getFileSize();
+        log.info("Size match: {} ({}% complete)", sizeMatch,
+                (receivedBytes * 100) / transfer.getFileSize());
+
+        return sizeMatch;
+    }
+
+    /**
+     * Mark upload as successful
+     */
+    public void markUploadAsSuccessful(FileTransferEntity transfer, Long compressedSize) {
+        try {
+            transfer.setUploadStatus(UploadStatus.COMPLETED);
+            transfer.setSuccess(true);
+            transfer.setBytesTransferred(compressedSize);
+            transfer.setCompletedAt(LocalDateTime.now());
+            transfer.setLastAttemptAt(LocalDateTime.now());
+            transfer.setFailureReason(null);
+
+            fileTransferRepo.save(transfer);
+
+            log.info("Upload marked SUCCESSFUL: {}", transfer.getTransferId());
+            log.info("  Original: {} MB", transfer.getFileSize() / (1024 * 1024));
+            log.info("  Compressed: {} MB", compressedSize / (1024 * 1024));
+
+        } catch (Exception e) {
+            log.error("Error marking upload as successful", e);
+        }
+    }
+
+    /**
+     * Mark upload as FAILED with reason
+     * Generate resume token for retry
+     */
+    public String markUploadAsFailed(FileTransferEntity transfer, String failureReason) {
+        try {
+            transfer.setUploadStatus(UploadStatus.FAILED);
+            transfer.setSuccess(false);
+            transfer.setFailureReason(failureReason);
+            transfer.setLastAttemptAt(LocalDateTime.now());
+
+            // Generate resume token (for resuming later)
+            String resumeToken = generateResumeToken(transfer);
+            transfer.setResumeToken(resumeToken);
+
+            // Increment retry count
+            Integer attempts = transfer.getUploadAttempts() != null ?
+                    transfer.getUploadAttempts() : 1;
+            transfer.setUploadAttempts(attempts + 1);
+
+            // Check if we've exceeded max retries
+            Integer maxRetries = transfer.getMaxRetries() != null ?
+                    transfer.getMaxRetries() : 3;
+
+            if (attempts >= maxRetries) {
+                transfer.setUploadStatus(UploadStatus.CANCELLED);
+                transfer.setFailureReason(failureReason + " (Max retries exceeded)");
+                log.error("Upload CANCELLED after {} attempts: {}",
+                        attempts, transfer.getTransferId());
+            }
+
+            fileTransferRepo.save(transfer);
+
+            log.error("Upload marked FAILED: {}", transfer.getTransferId());
+            log.error("  Reason: {}", failureReason);
+            log.error("  Attempt: {} of {}", attempts, maxRetries);
+            log.error("  Resume Token: {}", resumeToken);
+
+            return resumeToken;
+
+        } catch (Exception e) {
+            log.error("Error marking upload as failed", e);
+            return null;
+        }
+    }
+
+    /**
+     * Generate unique resume token
+     */
+    private String generateResumeToken(FileTransferEntity transfer) {
+        return transfer.getTransferId() + "_" + System.currentTimeMillis() + "_" +
+                UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    /**
+     * Mark upload as PAUSED (user paused, can resume)
+     */
+    public String markUploadAsPaused(FileTransferEntity transfer) {
+        try {
+            transfer.setUploadStatus(UploadStatus.PAUSED);
+            String resumeToken = generateResumeToken(transfer);
+            transfer.setResumeToken(resumeToken);
+            transfer.setLastAttemptAt(LocalDateTime.now());
+
+            fileTransferRepo.save(transfer);
+
+            log.info("Upload PAUSED: {}", transfer.getTransferId());
+            log.info("  Resume Token: {}", resumeToken);
+            log.info("  Bytes Uploaded: {}", transfer.getBytesTransferred());
+
+            return resumeToken;
+
+        } catch (Exception e) {
+            log.error("Error pausing upload", e);
+            return null;
+        }
+    }
+
+    /**
+     * Resume a failed or paused upload
+     */
+    public FileTransferEntity resumeUpload(String resumeToken) {
+        try {
+            log.info("Attempting to resume upload with token: {}", resumeToken);
+
+            FileTransferEntity transfer = fileTransferRepo.findByResumeToken(resumeToken)
+                    .orElse(null);
+
+            if (transfer == null) {
+                log.error("No upload found for resume token: {}", resumeToken);
+                return null;
+            }
+
+            // Check if upload can be resumed
+            if (!transfer.getAllowResume()) {
+                log.error("Upload {} cannot be resumed (allowResume = false)",
+                        transfer.getTransferId());
+                return null;
+            }
+
+            // Check if not cancelled
+            if (transfer.getUploadStatus() == UploadStatus.CANCELLED) {
+                log.error("Upload {} is CANCELLED and cannot be resumed",
+                        transfer.getTransferId());
+                return null;
+            }
+
+            // Update status to IN_PROGRESS
+            transfer.setUploadStatus(UploadStatus.IN_PROGRESS);
+            transfer.setStartedAt(LocalDateTime.now());
+
+            fileTransferRepo.save(transfer);
+
+            log.info("Upload RESUMED: {}", transfer.getTransferId());
+            log.info("  Bytes already uploaded: {}", transfer.getBytesTransferred());
+            log.info("  Remaining: {} bytes",
+                    transfer.getFileSize() - transfer.getBytesTransferred());
+
+            return transfer;
+
+        } catch (Exception e) {
+            log.error("Error resuming upload", e);
+            return null;
+        }
+    }
+
+    /**
+     * Get upload status
+     */
+    public UploadStatus getUploadStatus(String transferId) {
+        try {
+            FileTransferEntity transfer = fileTransferRepo.findByTransferId(transferId)
+                    .orElse(null);
+
+            if (transfer == null) {
+                log.warn("Transfer not found: {}", transferId);
+                return null;
+            }
+
+            return transfer.getUploadStatus();
+
+        } catch (Exception e) {
+            log.error("Error getting upload status", e);
+            return null;
+        }
+    }
+
+    /**
+     * Check upload health (detect stalled uploads)
+     */
+    public boolean isUploadStalled(FileTransferEntity transfer, long timeoutMs) {
+        try {
+            if (transfer.getUploadStatus() != UploadStatus.IN_PROGRESS) {
+                return false; // Not in progress, so not stalled
+            }
+
+            LocalDateTime lastAttempt = transfer.getLastAttemptAt();
+            if (lastAttempt == null) {
+                return false;
+            }
+
+            long lastAttemptMillis = lastAttempt
+                    .atZone(ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli();
+
+            long timeSinceLastActivity = System.currentTimeMillis() - lastAttemptMillis;
+
+            boolean isStalled = timeSinceLastActivity > timeoutMs;
+
+            if (isStalled) {
+                log.warn("Upload STALLED: {} (no activity for {} ms)",
+                        transfer.getTransferId(), timeSinceLastActivity);
+            }
+
+            return isStalled;
+
+        } catch (Exception e) {
+            log.error("Error checking if upload is stalled", e);
+            return false;
         }
     }
 

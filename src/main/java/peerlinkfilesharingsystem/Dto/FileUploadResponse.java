@@ -21,6 +21,8 @@ import java.time.LocalDateTime;
         private Integer appliedChunkSize;
         private Boolean success;
         private String message;
+        private String resumeToken;
         private LocalDateTime uploadedAt;
+        private LocalDateTime completedAt;
 
 }
