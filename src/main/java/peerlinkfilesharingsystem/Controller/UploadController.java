@@ -27,10 +27,9 @@ public class UploadController {
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public FileUploadResponse uploadFile(
             @RequestPart(value = "file", required = true) MultipartFile file,
-            @RequestHeader(value = "X-Network-Speed", defaultValue = "10.0") Double networkSpeedMbps,
+            @RequestHeader(value = "X-Network-Speed", defaultValue = "50.0") Double networkSpeedMbps,
             @RequestHeader(value = "X-Latency-Ms", defaultValue = "50") Integer latencyMs,
             @RequestHeader(value = "X-Device-Type", defaultValue = "DESKTOP") String deviceType,
-            @RequestParam(value = "resumeId", required = false) String resumeId,
             HttpServletRequest request) {
 
         String clientIp = request.getRemoteAddr();
@@ -59,16 +58,9 @@ public class UploadController {
                                 .build()
                 ).getBody();
             }
-            if (resumeId != null && !resumeId.isEmpty()) {
-                log.info("=== RESUME DETECTED ===");
-                log.info("Resuming upload with ID: {}", resumeId);
-                Long userId = 0L;
-                return ResponseEntity.ok(fileUploadService.resumeUpload(resumeId, userId)).getBody();
-            } else {
                 log.info("=== NEW UPLOAD DETECTED ===");
                 return ResponseEntity.ok(fileUploadService.handleFile(
                         file, latencyMs, networkSpeedMbps, deviceType, clientIp)).getBody();
-            }
 
         }catch (Exception e){
             log.error("Error uploading file", e);

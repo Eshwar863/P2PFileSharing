@@ -8,9 +8,12 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import peerlinkfilesharingsystem.Model.ChunkedDownloadResource;
+import peerlinkfilesharingsystem.Model.FileDownload;
 import peerlinkfilesharingsystem.Model.FileTransferEntity;
+import peerlinkfilesharingsystem.Repo.FileDownloadRepo;
 import peerlinkfilesharingsystem.Service.FileDownloadService.FileDownloadService;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -20,17 +23,19 @@ import java.util.UUID;
 @Slf4j
 public class DownloadController {
 
+    private final FileDownloadRepo fileDownloadRepo;
     private FileDownloadService fileDownloadService;
 
-    public DownloadController(FileDownloadService fileDownloadService) {
+    public DownloadController(FileDownloadService fileDownloadService, FileDownloadRepo fileDownloadRepo) {
         this.fileDownloadService = fileDownloadService;
+        this.fileDownloadRepo = fileDownloadRepo;
     }
 
 
     @GetMapping("/download/{transferId}")
     public ResponseEntity<?> downloadFile(
             @PathVariable String transferId,
-            @RequestHeader(value = "X-Network-Speed", defaultValue = "10.0") Double networkSpeedMbps,
+            @RequestHeader(value = "X-Network-Speed", defaultValue = "50.0") Double networkSpeedMbps,
             @RequestHeader(value = "X-Latency-Ms", defaultValue = "50") Integer latencyMs,
             @RequestHeader(value = "X-Device-Type", defaultValue = "DESKTOP") String deviceType,
             HttpServletRequest request) {
@@ -84,7 +89,10 @@ public class DownloadController {
             InputStreamResource inputStreamResource = new InputStreamResource(resource.getInputStream());
 
             log.info("========== DOWNLOAD SUCCESS ==========");
-
+            FileDownload fileDownload = fileDownloadRepo.findByTransferId(transferId);
+            fileDownload.setTransferDurationSeconds(LocalDateTime.now());
+            fileDownload.setStoragePath(transfer.getStoragePath());
+            fileDownloadRepo.save(fileDownload);
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION,
                             "attachment; filename=\"" + resource.getFileName() + "\"")

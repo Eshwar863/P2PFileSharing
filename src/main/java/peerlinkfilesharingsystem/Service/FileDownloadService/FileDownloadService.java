@@ -4,7 +4,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.stereotype.Service;
 import peerlinkfilesharingsystem.Model.ChunkedDownloadResource;
+import peerlinkfilesharingsystem.Model.FileDownload;
 import peerlinkfilesharingsystem.Model.FileTransferEntity;
+import peerlinkfilesharingsystem.Repo.FileDownloadRepo;
 import peerlinkfilesharingsystem.Repo.FileTransferRepo;
 import peerlinkfilesharingsystem.Service.IntelligencePredictionService.IntelligencePredictionService;
 
@@ -16,6 +18,7 @@ import java.util.zip.GZIPInputStream;
 @Slf4j
 public class FileDownloadService {
 
+    private final FileDownloadRepo fileDownloadRepo;
     private FileTransferRepo fileTransferRepo;
     private IntelligencePredictionService intelligencePredictionService;
 
@@ -24,9 +27,10 @@ public class FileDownloadService {
 
     public FileDownloadService(
             FileTransferRepo fileTransferRepo,
-            IntelligencePredictionService intelligencePredictionService) {
+            IntelligencePredictionService intelligencePredictionService, FileDownloadRepo fileDownloadRepo) {
         this.fileTransferRepo = fileTransferRepo;
         this.intelligencePredictionService = intelligencePredictionService;
+        this.fileDownloadRepo = fileDownloadRepo;
     }
 
 
@@ -98,7 +102,20 @@ public class FileDownloadService {
 
         try {
             Optional<FileTransferEntity> transferOpt = fileTransferRepo.findByTransferId(transferId);
-
+            if (transferOpt.isEmpty()) {
+                log.error("Transfer not found: {}", transferId);
+                return null;
+            }
+            FileTransferEntity transferEntity = transferOpt.get();
+            FileDownload fileDownload = new FileDownload();
+            fileDownload.setTransferId(transferId);
+            fileDownload.setFileName(transferEntity.getFileName());
+            fileDownload.setNetworkSpeedMbps(networkSpeedMbps);
+            fileDownload.setLatencyMs(latencyMs);
+            fileDownload.setFileSize(transferEntity.getFileSize());
+            fileDownload.setFileType(transferEntity.getFileType());
+            fileDownload.setChunkSize(transferOpt.get().getChunkSize());
+            fileDownloadRepo.save(fileDownload);
             if (transferOpt.isEmpty()) {
                 log.error("Transfer not found: {}", transferId);
                 return null;
@@ -222,6 +239,7 @@ public class FileDownloadService {
         private long totalBytesRead = 0;
         private long startTime;
         private int chunkCount = 0;
+        private long lastLogTime = System.currentTimeMillis();
 
         public ChunkedInputStream(InputStream delegate, int chunkSize, String fileName) {
             this.delegate = delegate;
@@ -243,18 +261,28 @@ public class FileDownloadService {
         @Override
         public int read(byte[] b, int off, int len) throws IOException {
             int bytesRead = delegate.read(b, off, Math.min(len, this.chunkSize));
+
             if (bytesRead > 0) {
                 totalBytesRead += bytesRead;
                 chunkCount++;
 
-                // Log every 10 chunks
-                if (chunkCount % 10 == 0) {
-                    long elapsed = System.currentTimeMillis() - startTime;
-                    double speedMbps = (totalBytesRead * 8.0) / (elapsed * 1000.0);
-                    log.info("Download Progress - File: {}, Chunk: {}, Total: {} MB, Speed: {:.2f} Mbps",
-                            fileName, chunkCount, totalBytesRead / (1024 * 1024), speedMbps);
+                long now = System.currentTimeMillis();
+
+                // Log once every 1 second
+                if (now - lastLogTime >= 1000) {
+                    double speedMbps = (totalBytesRead * 8.0) / ((now - startTime) * 1000.0);
+                    String speedFormatted = String.format("%.2f", speedMbps);
+
+                    log.info("Downloading {} → {} MB transferred, Speed: {} Mbps",
+                            fileName,
+                            totalBytesRead / (1024 * 1024),
+                            speedFormatted
+                    );
+
+                    lastLogTime = now;
                 }
             }
+
             return bytesRead;
         }
 
@@ -262,9 +290,19 @@ public class FileDownloadService {
         public void close() throws IOException {
             long totalTime = System.currentTimeMillis() - startTime;
             double avgSpeedMbps = (totalBytesRead * 8.0) / (totalTime * 1000.0);
-            log.info("Download Complete - File: {}, Total: {} MB, Time: {}ms, Avg Speed: {:.2f} Mbps, Chunks: {}",
-                    fileName, totalBytesRead / (1024 * 1024), totalTime, avgSpeedMbps, chunkCount);
+
+            String avgSpeedFormatted = String.format("%.2f", avgSpeedMbps);
+
+            log.info("Download Complete → File: {}, Size: {} MB, Time: {} ms, Avg Speed: {} Mbps",
+                    fileName,
+                    totalBytesRead / (1024 * 1024),
+                    totalTime,
+                    avgSpeedFormatted
+            );
+
             delegate.close();
         }
+
+
     }
 }

@@ -9,16 +9,13 @@ import peerlinkfilesharingsystem.Model.FileTransferEntity;
 import peerlinkfilesharingsystem.Model.IntelligentModelParametersEntity;
 import peerlinkfilesharingsystem.Repo.FileTransferRepo;
 import peerlinkfilesharingsystem.Repo.IntelligentModelParametersRepo;
-import peerlinkfilesharingsystem.Repo.TransferMetricsRepo;
 import peerlinkfilesharingsystem.Service.CompressionService.FileCompressionService;
 import peerlinkfilesharingsystem.Service.FileStorageService;
 import peerlinkfilesharingsystem.Service.IntelligencePredictionService.IntelligencePredictionService;
-import peerlinkfilesharingsystem.Service.Redis.RedisUploadService;
 
 import java.io.*;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -27,30 +24,25 @@ import java.util.UUID;
 public class FileUploadService {
 
     private final FileStorageService fileStorageService;
-    private final RedisUploadService redisUploadService;
     @Value("${file.storage.path:./uploads}")
     private String uploadDirectory;
 
     private FileTransferRepo fileTransferRepo;
     private IntelligencePredictionService intelligencePredictionService;
-    private TransferMetricsRepo transferMetricsRepo;
     private FileCompressionService compressionService;
     private IntelligentModelParametersRepo intelligentModelParametersRepo;
 
 
     public FileUploadService(FileTransferRepo fileTransferRepo,
                              IntelligencePredictionService intelligencePredictionService,
-                             TransferMetricsRepo transferMetricsRepo,
                              FileCompressionService fileCompressionService,
-                             IntelligentModelParametersRepo intelligentModelParametersRepo, FileStorageService fileStorageService,
-                             RedisUploadService redisUploadService) {
+                             IntelligentModelParametersRepo intelligentModelParametersRepo, FileStorageService fileStorageService
+                             ) {
         this.fileTransferRepo = fileTransferRepo;
         this.intelligencePredictionService = intelligencePredictionService;
-        this.transferMetricsRepo = transferMetricsRepo;
         this.compressionService = fileCompressionService;
         this.intelligentModelParametersRepo = intelligentModelParametersRepo;
         this.fileStorageService = fileStorageService;
-        this.redisUploadService = redisUploadService;
     }
 
     public FileUploadResponse handleFile(MultipartFile file, Integer latencyMs,
@@ -270,7 +262,8 @@ public class FileUploadService {
     }
 
     public List<FileTransferEntity> getRecentTransfers(Integer limit) {
-        return fileTransferRepo.findLastUploads(limit);
+        String id = "13131"; /// TODO : userId from JWT
+        return fileTransferRepo.findLastUploads(id,limit);
     }
 
     private static class CompressionResult {
@@ -282,57 +275,6 @@ public class FileUploadService {
             this.totalBytesRead = totalBytesRead;
             this.totalBytesCompressed = totalBytesCompressed;
             this.chunkCount = chunkCount;
-        }
-    }
-    public FileUploadResponse resumeUpload(String transferId, Long userId) {
-        log.info("===== RESUME UPLOAD START =====");
-        log.info("TransferId: {}, UserId: {}", transferId, userId);
-
-        try {
-            // Step 1: Check if session exists in Redis
-            if (!redisUploadService.sessionExists(transferId)) {
-                log.error("Session not found in Redis: {}", transferId);
-                return FileUploadResponse.builder()
-                        .success(false)
-                        .message("Upload session not found. Cannot resume.")
-                        .build();
-            }
-
-            // Step 2: Get session info
-            Map<Object, Object> sessionInfo = redisUploadService.getSessionInfo(transferId);
-            String fileName = sessionInfo.get("fileName").toString();
-            long totalChunks = Long.parseLong(sessionInfo.get("totalChunks").toString());
-
-            log.info("Session found for: {}", fileName);
-            log.info("Total chunks: {}, Already uploaded: {}",
-                    totalChunks, redisUploadService.getUploadedChunkCount(transferId));
-
-            // Step 3: Change status to IN_PROGRESS
-            redisUploadService.resumeUpload(transferId);
-
-            // Step 4: Get missing chunks to inform client
-            List<Integer> missingChunks = redisUploadService.getMissingChunks(transferId);
-
-            double progress = redisUploadService.getUploadProgress(transferId);
-
-            log.info("===== RESUME UPLOAD READY =====");
-            log.info("Progress: {:.2f}%", progress);
-            log.info("Missing chunks to upload: {}", missingChunks.size());
-
-            return FileUploadResponse.builder()
-                    .transferId(transferId)
-                    .fileName(fileName)
-                    .success(true)
-                    .message(String.format("Upload resumed. Progress: %.2f%%. Resume upload from chunk %d",
-                            progress, missingChunks.isEmpty() ? -1 : missingChunks.get(0)))
-                    .build();
-
-        } catch (Exception e) {
-            log.error("Resume failed", e);
-            return FileUploadResponse.builder()
-                    .success(false)
-                    .message("Resume failed: " + e.getMessage())
-                    .build();
         }
     }
 
