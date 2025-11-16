@@ -10,8 +10,6 @@ import org.springframework.web.multipart.MultipartFile;
 import peerlinkfilesharingsystem.Dto.FileUploadResponse;
 import peerlinkfilesharingsystem.Service.FileUploadService.FileUploadService;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -61,7 +59,6 @@ public class UploadController {
                 log.info("=== NEW UPLOAD DETECTED ===");
                 return ResponseEntity.ok(fileUploadService.handleFile(
                         file, latencyMs, networkSpeedMbps, deviceType, clientIp)).getBody();
-
         }catch (Exception e){
             log.error("Error uploading file", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(

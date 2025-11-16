@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
+import peerlinkfilesharingsystem.Enums.MarkFileAs;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -39,6 +40,8 @@ public class FileTransferEntity {
     @CreationTimestamp
     private LocalDateTime createdAt;
     private Long userId;
+    private MarkFileAs markFileAs = MarkFileAs.PRIVATE;
+    private String status;
     private LocalDateTime completedAt;
     private String storagePath;
     @Column(nullable = false)

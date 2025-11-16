@@ -106,6 +106,11 @@ public class FileDownloadService {
                 log.error("Transfer not found: {}", transferId);
                 return null;
             }
+
+            if (transferOpt.isEmpty()) {
+                log.error("Transfer not found: {}", transferId);
+                return null;
+            }
             FileTransferEntity transferEntity = transferOpt.get();
             FileDownload fileDownload = new FileDownload();
             fileDownload.setTransferId(transferId);
@@ -116,11 +121,6 @@ public class FileDownloadService {
             fileDownload.setFileType(transferEntity.getFileType());
             fileDownload.setChunkSize(transferOpt.get().getChunkSize());
             fileDownloadRepo.save(fileDownload);
-            if (transferOpt.isEmpty()) {
-                log.error("Transfer not found: {}", transferId);
-                return null;
-            }
-
             FileTransferEntity transfer = transferOpt.get();
             String storagePath = transfer.getStoragePath();
 
