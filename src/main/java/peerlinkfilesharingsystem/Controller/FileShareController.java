@@ -1,7 +1,7 @@
 package peerlinkfilesharingsystem.Controller;
 
-
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import peerlinkfilesharingsystem.Service.FileShareService.FileShareService;
@@ -14,14 +14,18 @@ public class FileShareController {
         this.fileShareService = fileShareService;
     }
 
-    @PostMapping("share/{transferid}")
-    public ResponseEntity<?> shareFile(@RequestParam String transferId) {
-        return fileShareService.getUrl(transferId);
+    @PostMapping("share/{shareId}/link")
+    public ResponseEntity<?> shareFile(@PathVariable(name = "shareId") String shareToken) {
+        return fileShareService.getShareUrl(shareToken);
     }
 
-    @PostMapping("markPublic/{transferid}")
-    public ResponseEntity<?> markPublic(@RequestParam String transferId) {
-        fileShareService.markFileAspublic(transferId);
+    @PostMapping("markPublic/{transferId}")
+    public ResponseEntity<?> markPublic(@PathVariable(name ="transferId" ) String transferId) {
+        return fileShareService.markFileAspublic(transferId);
+    }
+    @PostMapping("markPrivate/{transferId}")
+    public ResponseEntity<?> markPrivate(@PathVariable(name ="transferId" ) String transferId) {
+        return fileShareService.markFileAsPrivate(transferId);
     }
 
 }

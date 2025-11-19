@@ -32,10 +32,12 @@ public class FileTransferEntity {
     private Double networkSpeedMbps;
     private Integer latencyMs;
     private Double packetLossPercentage;
-    private Integer transferDurationSeconds;
+    private Integer transferDurationSeconds = Integer.MAX_VALUE;
     private Long bytesTransferred;
     private Boolean success;
-    private Integer retryCount;
+    private int downloadCount = 0;
+    @Column(unique = true)
+    private String shareToken;
     private String deviceType;
     @CreationTimestamp
     private LocalDateTime createdAt;

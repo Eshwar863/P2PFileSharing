@@ -2,11 +2,17 @@ package peerlinkfilesharingsystem.Service.FileDownloadService;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import peerlinkfilesharingsystem.Dto.FileShareDownloadDTO;
+import peerlinkfilesharingsystem.Enums.MarkFileAs;
 import peerlinkfilesharingsystem.Model.ChunkedDownloadResource;
 import peerlinkfilesharingsystem.Model.FileDownload;
+import peerlinkfilesharingsystem.Model.FileShare;
 import peerlinkfilesharingsystem.Model.FileTransferEntity;
 import peerlinkfilesharingsystem.Repo.FileDownloadRepo;
+import peerlinkfilesharingsystem.Repo.FileShareRepo;
 import peerlinkfilesharingsystem.Repo.FileTransferRepo;
 import peerlinkfilesharingsystem.Service.IntelligencePredictionService.IntelligencePredictionService;
 
@@ -19,6 +25,7 @@ import java.util.zip.GZIPInputStream;
 public class FileDownloadService {
 
     private final FileDownloadRepo fileDownloadRepo;
+    private final FileShareRepo fileShareRepo;
     private FileTransferRepo fileTransferRepo;
     private IntelligencePredictionService intelligencePredictionService;
 
@@ -27,10 +34,11 @@ public class FileDownloadService {
 
     public FileDownloadService(
             FileTransferRepo fileTransferRepo,
-            IntelligencePredictionService intelligencePredictionService, FileDownloadRepo fileDownloadRepo) {
+            IntelligencePredictionService intelligencePredictionService, FileDownloadRepo fileDownloadRepo, FileShareRepo fileShareRepo) {
         this.fileTransferRepo = fileTransferRepo;
         this.intelligencePredictionService = intelligencePredictionService;
         this.fileDownloadRepo = fileDownloadRepo;
+        this.fileShareRepo = fileShareRepo;
     }
 
 
@@ -53,6 +61,28 @@ public class FileDownloadService {
 
         } catch (Exception e) {
             log.error("Error querying database for transferId: {}", transferId, e);
+            return null;
+        }
+    }
+    public FileTransferEntity getShareById(String ShareId) {
+        log.info("Querying database for ShareId: {}", ShareId);
+
+        try {
+            Optional<FileTransferEntity> transferOpt = fileTransferRepo.findByShareToken(ShareId);
+
+            if (transferOpt.isPresent()) {
+                FileTransferEntity transfer = transferOpt.get();
+                log.info("Transfer found in database");
+                log.debug("  ID: {}, File: {}, Path: {}",
+                        transfer.getTransferId(), transfer.getFileName(), transfer.getStoragePath());
+                return transfer;
+            } else {
+                log.warn("Transfer not found in database - ShareId: {}", ShareId);
+                return null;
+            }
+
+        } catch (Exception e) {
+            log.error("Error querying database for ShareId: {}", ShareId, e);
             return null;
         }
     }
@@ -122,6 +152,7 @@ public class FileDownloadService {
             fileDownload.setChunkSize(transferOpt.get().getChunkSize());
             fileDownloadRepo.save(fileDownload);
             FileTransferEntity transfer = transferOpt.get();
+            transfer.setDownloadCount(transfer.getDownloadCount() + 1);
             String storagePath = transfer.getStoragePath();
 
             File file = new File(storagePath);
@@ -186,49 +217,124 @@ public class FileDownloadService {
         }
     }
 
+    public ResponseEntity<?> getPublicFile(String shareToken) {
+        Optional<FileTransferEntity> fileTransferEntity = fileTransferRepo.findByShareToken(shareToken);
 
+        if (fileTransferEntity.isEmpty() || fileTransferEntity.get().getMarkFileAs() == MarkFileAs.PRIVATE) {
+            log.error("Transfer not found: {}", fileTransferEntity.get().getFileId());
+            return ResponseEntity.notFound().build();
+        }
+        if (fileTransferEntity.get().getMarkFileAs() == MarkFileAs.PUBLIC
+                && fileTransferEntity.get().getShareToken()!=null
+                && fileTransferEntity.get().getSuccess()) {
+        }
+        return ResponseEntity.ok(fileTransferEntity.get());
+    }
 
-    public InputStreamResource downloadFile(String transferId) {
-        log.info("Downloading file (legacy method) for transferId: {}", transferId);
+    public ResponseEntity<?> getTransferInfoOfPublicFile(String shareId) {
+        FileShare  fileShare  = fileShareRepo.findByShareToken(shareId);
+        Optional<FileTransferEntity> transfer = fileTransferRepo.findByShareToken(shareId);
+        if (fileShare == null || transfer == null) {
+            return new ResponseEntity<>("File Not Found or Link Expired ",HttpStatus.NOT_FOUND);       }
+
+        return new ResponseEntity<>( new FileShareDownloadDTO(transfer.get().getSuccess(),fileShare.getShareToken(),transfer.get().getFileSize(),transfer.get().getFileName(),transfer.get().getFileType()),HttpStatus.OK);
+    }
+
+    public ChunkedDownloadResource downloadPublicFileWithAdaptiveChunking(
+            String transferId,
+            Double networkSpeedMbps,
+            String shareId,
+            Integer latencyMs) {
+
+        log.info("Starting adaptive chunked download for transferId: {}", transferId);
 
         try {
             Optional<FileTransferEntity> transferOpt = fileTransferRepo.findByTransferId(transferId);
-
-            if (transferOpt.isEmpty()) {
+            FileShare fileShare = fileShareRepo.findByShareToken(shareId);
+            if (transferOpt.isEmpty() || fileShare == null ) {
                 log.error("Transfer not found: {}", transferId);
                 return null;
             }
 
+            if (transferOpt.get().getSuccess() && transferOpt.get().getMarkFileAs() == MarkFileAs.PRIVATE ) {
+                log.error("Transfer not found: {}", transferId);
+                return null;
+            }
+            FileTransferEntity transferEntity = transferOpt.get();
+            FileDownload fileDownload = new FileDownload();
+            fileDownload.setTransferId(shareId);
+            fileDownload.setFileName(transferEntity.getFileName());
+            fileDownload.setNetworkSpeedMbps(networkSpeedMbps);
+            fileDownload.setLatencyMs(latencyMs);
+            fileDownload.setFileSize(transferEntity.getFileSize());
+            fileDownload.setFileType(transferEntity.getFileType());
+            fileDownload.setChunkSize(transferOpt.get().getChunkSize());
+            fileDownloadRepo.save(fileDownload);
             FileTransferEntity transfer = transferOpt.get();
+            transfer.setDownloadCount(transfer.getDownloadCount() + 1);
             String storagePath = transfer.getStoragePath();
 
             File file = new File(storagePath);
 
             if (!file.exists() || !file.isFile()) {
-                log.error("File not found: {}", storagePath);
+                log.error("File not found or invalid path: {}", storagePath);
                 return null;
             }
 
+            log.info("File found on disk - Size: {} bytes", file.length());
+
+            // Check if file is GZIP compressed
             boolean isCompressed = isGzipCompressed(file);
             log.info("File is {} compressed", isCompressed ? "GZIP" : "NOT");
 
-            FileInputStream fileInputStream = new FileInputStream(file);
-            InputStream inputStream;
+            // Get file extension
+            String extension = getFileExtension(transfer.getFileName());
+
+            // Predict optimal parameters based on network conditions
+            IntelligencePredictionService.OptimizationParams optimizationParams =
+                    intelligencePredictionService.predictOptimalParameters(
+                            transfer.getFileName(),
+                            extension,
+                            networkSpeedMbps,
+                            latencyMs,
+                            transfer.getFileSize()
+                    );
+
+            log.info("Optimization Parameters:");
+            log.info("  Network Condition: {}", optimizationParams.getNetworkCondition());
+            log.info("  Chunk Size: {} bytes", optimizationParams.getChunkSize());
+            log.info("  Compression Level: {}", optimizationParams.getCompressionLevel());
+
+            // Create chunked input stream
+            InputStream baseInputStream = new FileInputStream(file);
 
             if (isCompressed) {
-                inputStream = new GZIPInputStream(fileInputStream);
-            } else {
-                inputStream = fileInputStream;
+                baseInputStream = new GZIPInputStream(baseInputStream);
+                log.info("GZIPInputStream created - file will be decompressed");
             }
 
-            return new InputStreamResource(inputStream);
+            // Wrap in chunked resource with adaptive chunk size
+            ChunkedInputStream chunkedInputStream = new ChunkedInputStream(
+                    baseInputStream,
+                    optimizationParams.getChunkSize(),
+                    transfer.getFileName()
+            );
+
+            return ChunkedDownloadResource.builder()
+                    .inputStream(chunkedInputStream)
+                    .fileName(transfer.getFileName())
+                    .originalSizeBytes(transfer.getFileSize())
+                    .compressedSizeBytes(transfer.getBytesTransferred())
+                    .chunkSize(optimizationParams.getChunkSize())
+                    .networkCondition(optimizationParams.getNetworkCondition())
+                    .isCompressed(isCompressed)
+                    .build();
 
         } catch (Exception e) {
-            log.error("Error downloading file", e);
+            log.error("Error in adaptive download for transferId: {}", transferId, e);
             return null;
         }
     }
-
 
     @Slf4j
     public static class ChunkedInputStream extends InputStream {

@@ -3,8 +3,8 @@ package peerlinkfilesharingsystem.Model;
 import jakarta.persistence.*;
 import lombok.Data;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.time.LocalDateTime;
+import java.util.HashSet;
 
 @Entity
 @Data
@@ -17,10 +17,8 @@ public class FileShare {
     private String fileName;
     private String fileType;
     private Long fileSize;
+    private String shareToken;
+    private LocalDateTime shareExpiresAt;
 
-    @OneToOne(cascade = CascadeType.ALL)
-    private FileTransferEntity fileTransferEntity;
-
-    Map<String,String> ShareUrl;
 
 }

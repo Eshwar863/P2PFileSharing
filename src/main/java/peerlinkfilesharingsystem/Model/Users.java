@@ -5,6 +5,9 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public class Users {
@@ -19,4 +22,5 @@ public class Users {
     private String email;
     private String role;
 
+    HashSet<String> Sharedfiles;
 }
