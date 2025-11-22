@@ -15,15 +15,12 @@ public interface IntelligentModelParametersRepo extends JpaRepository<Intelligen
     @Query("SELECT COUNT(ft) FROM FileTransferEntity ft WHERE ft.success = true")
     Long countSuccessfulTransfers();
 
-    // Get all successfull transfers
     @Query("SELECT ft FROM FileTransferEntity ft WHERE ft.success = true ORDER BY ft.createdAt DESC")
     List<FileTransferEntity> findAllSuccessfulTransfers();
 
-    // Get transfers by file type
     @Query("SELECT ft FROM FileTransferEntity ft WHERE ft.fileType = ?1 AND ft.success = true")
     List<FileTransferEntity> findSuccessfulByFileType(String fileType);
 
-    // Get transfers by network condition
     @Query("SELECT ft FROM FileTransferEntity ft WHERE ft.networkSpeedMbps < ?1 AND ft.success = true")
     List<FileTransferEntity> findByNetworkSpeed(Double speed);
 

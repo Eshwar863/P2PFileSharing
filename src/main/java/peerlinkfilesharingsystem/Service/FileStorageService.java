@@ -4,17 +4,30 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import peerlinkfilesharingsystem.Exception.UnauthorizedFileAccessException;
+import peerlinkfilesharingsystem.Model.DeletedFiles;
+import peerlinkfilesharingsystem.Model.FileTransferEntity;
+import peerlinkfilesharingsystem.Repo.DeletedFilesRepo;
+import peerlinkfilesharingsystem.Repo.FileTransferRepo;
 
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 @Slf4j
 public class FileStorageService {
 
+    private final FileTransferRepo fileTransferRepo;
+    private final DeletedFilesRepo deletedFilesRepo;
     @Value("${file.storage.path:./uploads}")
     private String baseUploadDirectory;
+
+    public FileStorageService(FileTransferRepo fileTransferRepo, DeletedFilesRepo deletedFilesRepo) {
+        this.fileTransferRepo = fileTransferRepo;
+        this.deletedFilesRepo = deletedFilesRepo;
+    }
 
 
     public String createUserDirectory(String userId) {
@@ -45,7 +58,7 @@ public class FileStorageService {
     }
 
 
-    public void validateUserAccess(String requestingUserId, String filePath) {
+    public boolean validateUserAccess(String requestingUserId, String filePath) {
         try {
             Path normalizedPath = Paths.get(filePath).normalize().toAbsolutePath();
             Path expectedUserDir = Paths.get(baseUploadDirectory, "user_" + requestingUserId)
@@ -61,6 +74,7 @@ public class FileStorageService {
             log.error("Access validation failed for user {}: {}", requestingUserId, e.getMessage());
             throw new UnauthorizedFileAccessException("Access validation failed: " + e.getMessage());
         }
+        return true;
     }
 
 
@@ -73,25 +87,55 @@ public class FileStorageService {
     }
 
 
-    public boolean deleteFile(String userId, String transferId) {
-        String filePath = getUserFilePath(userId, transferId);
-        validateUserAccess(userId, filePath);
-
-        File file = new File(filePath);
-        if (file.exists()) {
-            boolean deleted = file.delete();
-            log.info("File deletion for user {}, transfer {}: {}", userId, transferId, deleted);
-            return deleted;
-        }
-        return false;
-    }
-
-
     public String getUserDirectoryPath(String userId) {
         return baseUploadDirectory + "/user_" + userId;
     }
 
-    public String getBaseUploadDirectory() {
-        return baseUploadDirectory;
+    public void deleteExpiredFiles() {
+
+        List<FileTransferEntity> expiredFiles =
+                fileTransferRepo.findExpiredFiles(LocalDateTime.now());
+
+        if (expiredFiles.isEmpty()) {
+            log.info("No expired files found.");
+            System.out.println("No Expired files found.");
+        }
+
+        boolean allDeleted = true;
+
+        for (FileTransferEntity file : expiredFiles) {
+            if (!file.getDeleted()) {
+
+                DeletedFiles deletedFiles = new DeletedFiles();
+                deletedFiles.setFileName(file.getFileName());
+                deletedFiles.setFileType(file.getFileType());
+                deletedFiles.setFilePath(file.getStoragePath());
+                deletedFiles.setDeletedAt(LocalDateTime.now());
+                deletedFiles.setTransferId(file.getTransferId());
+                deletedFiles.setUserId(file.getUserId().toString());
+                deletedFilesRepo.save(deletedFiles);
+
+                file.setDeleted(true);
+                fileTransferRepo.save(file);
+                String filePath = file.getStoragePath();
+                File physicalFile = new File(filePath);
+
+                boolean deleted = false;
+                if (physicalFile.exists()) {
+                    deleted = physicalFile.delete();
+                    log.info("Deleted expired file: {} → {}", file.getFileName(), deleted);
+                } else {
+                    log.warn("File not found on disk: {}", filePath);
+                }
+
+                fileTransferRepo.delete(file);
+                log.info("Deleted DB entry for file: {}", file.getTransferId());
+
+                if (!deleted) {
+                    allDeleted = false;
+                }
+            }
+        }
     }
+
 }

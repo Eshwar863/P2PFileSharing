@@ -1,9 +1,10 @@
 package peerlinkfilesharingsystem.Service.FileShareService;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import peerlinkfilesharingsystem.Config.SecurityConfig;
 import peerlinkfilesharingsystem.Dto.ShareFileResponse;
@@ -13,10 +14,12 @@ import peerlinkfilesharingsystem.Model.FileTransferEntity;
 import peerlinkfilesharingsystem.Repo.FileShareRepo;
 import peerlinkfilesharingsystem.Repo.FileTransferRepo;
 
+import java.io.FileNotFoundException;
 import java.time.LocalDateTime;
 import java.util.*;
 
 @Service
+@Slf4j
 public class FileShareService {
 
     private final FileTransferRepo fileTransferRepo;
@@ -31,16 +34,19 @@ public class FileShareService {
 
     public ResponseEntity<?> markFileAspublic(String transferId) {
 
-        Optional<FileTransferEntity> fileTransferEntity = fileTransferRepo.findByTransferId(transferId);
-        FileShare  fileShare1 = fileShareRepo.findByShareToken(fileTransferEntity.get().getShareToken());
-
-        if (fileTransferEntity.isEmpty()) {
-            return ResponseEntity.status(404).body("File not found");
-        }if (fileShare1!=null && fileTransferEntity.get().getMarkFileAs() == MarkFileAs.PUBLIC) {
+//        Optional<FileTransferEntity> fileTransferEntity = fileTransferRepo.findByTransferId(transferId);
+        FileTransferEntity fileTransferEntity = fileTransferRepo.findByTransferId(transferId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "File transfer not found with ID: " + transferId)
+                );
+        log.info("fileTransfer Entity: {}", fileTransferEntity);
+        FileShare  fileShare1 = fileShareRepo.findByShareToken(fileTransferEntity.getShareToken());
+        log.info("fileTransfer Entity: {}", fileShare1);
+        if (fileShare1!=null && fileTransferEntity.getMarkFileAs() == MarkFileAs.PUBLIC) {
             return new ResponseEntity<>("Already Marked as Public" ,HttpStatus.OK);
         }
-
-        FileTransferEntity file = fileTransferEntity.get();
+        FileTransferEntity file = fileTransferEntity;
         file.setMarkFileAs(MarkFileAs.PUBLIC);
         file.setShareToken(UUID.randomUUID().toString());
         fileTransferRepo.save(file);
@@ -50,6 +56,7 @@ public class FileShareService {
         fileShare.setFileSize(file.getFileSize());
         fileShare.setFileType(file.getFileType());
         fileShare.setShareToken(file.getShareToken());
+//        fileShare.setShareExpiresAt(LocalDateTime.now().plusSeconds(15));
         fileShare.setShareExpiresAt(LocalDateTime.now().plusDays(1));
         fileShareRepo.save(fileShare);
         return new ResponseEntity<>("File marked as PUBLIC: " + transferId, HttpStatus.OK);
@@ -91,18 +98,21 @@ public class FileShareService {
 
         return ResponseEntity.ok(response);
     }
-    public ResponseEntity<?> markFileAsPrivate(String transferId) {
+    public ResponseEntity<?> markFileAsPrivate(String transferId) throws FileNotFoundException {
 
-        Optional<FileTransferEntity> fileTransferEntity = fileTransferRepo.findByTransferId(transferId);
-        FileShare  fileShare1 = fileShareRepo.findByShareToken(fileTransferEntity.get().getShareToken());
-        if (fileTransferEntity.get().getMarkFileAs() == MarkFileAs.PRIVATE ) {
+//        Optional<FileTransferEntity> fileTransferEntity = Optional.ofNullable(fileTransferRepo.findByTransferId(transferId).orElseThrow(() ->
+        //new FileNotFoundException("File Not Found")));
+        FileTransferEntity fileTransferEntity = fileTransferRepo.findByTransferId(transferId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "File transfer not found with ID: " + transferId)
+                );
+        FileShare  fileShare1 = fileShareRepo.findByShareToken(fileTransferEntity.getShareToken());
+        if (fileTransferEntity.getMarkFileAs() == MarkFileAs.PRIVATE ) {
             return new ResponseEntity<>("Already Marked as Private" ,HttpStatus.OK);
         }
-        if (fileTransferEntity.isEmpty()) {
-            return ResponseEntity.status(404).body("File not found");
-        }
 
-        FileTransferEntity file = fileTransferEntity.get();
+        FileTransferEntity file = fileTransferEntity;
         file.setMarkFileAs(MarkFileAs.PRIVATE);
         file.setShareToken(null);
         fileTransferRepo.save(file);

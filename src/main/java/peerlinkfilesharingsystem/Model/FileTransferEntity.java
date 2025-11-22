@@ -32,7 +32,7 @@ public class FileTransferEntity {
     private Double networkSpeedMbps;
     private Integer latencyMs;
     private Double packetLossPercentage;
-    private Integer transferDurationSeconds = Integer.MAX_VALUE;
+    private Integer transferDurationSeconds;
     private Long bytesTransferred;
     private Boolean success;
     private int downloadCount = 0;
@@ -41,6 +41,7 @@ public class FileTransferEntity {
     private String deviceType;
     @CreationTimestamp
     private LocalDateTime createdAt;
+    private LocalDateTime expiresAt;
     private Long userId;
     private MarkFileAs markFileAs = MarkFileAs.PRIVATE;
     private String status;
@@ -48,5 +49,6 @@ public class FileTransferEntity {
     private String storagePath;
     @Column(nullable = false)
     private String clientIp;
+    private Boolean deleted = false;
 
 }

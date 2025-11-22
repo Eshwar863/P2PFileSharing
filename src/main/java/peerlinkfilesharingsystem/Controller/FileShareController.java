@@ -6,6 +6,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import peerlinkfilesharingsystem.Service.FileShareService.FileShareService;
 
+import java.io.FileNotFoundException;
+
 @org.springframework.web.bind.annotation.RestController
 @org.springframework.web.bind.annotation.RequestMapping("/fileshare")
 public class FileShareController {
@@ -24,7 +26,7 @@ public class FileShareController {
         return fileShareService.markFileAspublic(transferId);
     }
     @PostMapping("markPrivate/{transferId}")
-    public ResponseEntity<?> markPrivate(@PathVariable(name ="transferId" ) String transferId) {
+    public ResponseEntity<?> markPrivate(@PathVariable(name ="transferId" ) String transferId) throws FileNotFoundException {
         return fileShareService.markFileAsPrivate(transferId);
     }
 

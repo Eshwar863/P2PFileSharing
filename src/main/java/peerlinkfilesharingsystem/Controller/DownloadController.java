@@ -144,7 +144,6 @@ public class DownloadController {
         }
     }
 
-    // download dile as public
     @PostMapping("download/{shareToken}/public")
     public ResponseEntity<?> downloadPublic(@RequestParam String shareToken) {
         return fileDownloadService.getPublicFile(shareToken);
@@ -197,6 +196,9 @@ public class DownloadController {
             if (transfer == null) {
                 log.warn("Transfer not found - ShareId: {}", shareId);
                 return ResponseEntity.notFound().build();
+            }if (transfer.getDeleted()) {
+                log.warn("File Expired - ShareId: {}", shareId);
+                return ResponseEntity.notFound().build();
             }
 
             log.info("[{}] Transfer found:", shareId);
@@ -230,9 +232,11 @@ public class DownloadController {
 
             log.info("========== DOWNLOAD SUCCESS ==========");
             FileDownload fileDownload = fileDownloadRepo.findByTransferId(transfer.getTransferId());
-            fileDownload.setTransferDurationSeconds(LocalDateTime.now());
-            fileDownload.setStoragePath(transfer.getStoragePath());
-            fileDownloadRepo.save(fileDownload);
+            if (fileDownload != null) {
+                fileDownload.setTransferDurationSeconds(LocalDateTime.now());
+                fileDownload.setStoragePath(transfer.getStoragePath());
+                fileDownloadRepo.save(fileDownload);
+            }
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION,
                             "attachment; filename=\"" + resource.getFileName() + "\"")

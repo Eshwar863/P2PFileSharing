@@ -68,7 +68,7 @@ public class FileUploadService {
             fileTransferEntity.setLatencyMs(latencyMs);
             fileTransferEntity.setNetworkSpeedMbps(networkSpeedMbps);
             fileTransferEntity.setClientIp(clientIp);
-
+            fileTransferEntity.setExpiresAt(LocalDateTime.now().plusMinutes(1));
             log.info("FileTransferEntity created and saved");
 
             log.info("Requesting ML predictions...");

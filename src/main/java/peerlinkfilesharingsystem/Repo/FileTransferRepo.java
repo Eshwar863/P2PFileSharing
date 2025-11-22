@@ -6,6 +6,8 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import peerlinkfilesharingsystem.Model.FileTransferEntity;
 
+import java.io.File;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,4 +26,11 @@ public interface FileTransferRepo extends JpaRepository<FileTransferEntity,UUID>
                                              @Param("limit") int limit);
 
     Optional<FileTransferEntity> findByShareToken(String shareToken);
+
+    @Query(value = "SELECT * FROM file_transfer_entity " +
+            "WHERE expires_at <= :time " +
+            "ORDER BY expires_at DESC",
+            nativeQuery = true)
+    List<FileTransferEntity> findExpiredFiles(@Param("time") LocalDateTime time);
+
 }

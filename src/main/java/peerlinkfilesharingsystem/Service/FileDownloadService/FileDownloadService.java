@@ -132,6 +132,12 @@ public class FileDownloadService {
 
         try {
             Optional<FileTransferEntity> transferOpt = fileTransferRepo.findByTransferId(transferId);
+
+            if(transferOpt.get().getDeleted()) {
+                log.info("File deleted from Storage");
+                throw new FileNotFoundException("File Expired");
+            }
+
             if (transferOpt.isEmpty()) {
                 log.error("Transfer not found: {}", transferId);
                 return null;
@@ -251,6 +257,10 @@ public class FileDownloadService {
         try {
             Optional<FileTransferEntity> transferOpt = fileTransferRepo.findByTransferId(transferId);
             FileShare fileShare = fileShareRepo.findByShareToken(shareId);
+            if (transferOpt.get().getDeleted()){
+                log.info("File deleted from Storage");
+                throw new FileNotFoundException("File Expired");
+            }
             if (transferOpt.isEmpty() || fileShare == null ) {
                 log.error("Transfer not found: {}", transferId);
                 return null;
@@ -273,7 +283,7 @@ public class FileDownloadService {
             FileTransferEntity transfer = transferOpt.get();
             transfer.setDownloadCount(transfer.getDownloadCount() + 1);
             String storagePath = transfer.getStoragePath();
-
+            fileTransferRepo.save(transfer);
             File file = new File(storagePath);
 
             if (!file.exists() || !file.isFile()) {
