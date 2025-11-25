@@ -18,6 +18,7 @@ public class FileShare {
     private Long fileSize;
     private String shareToken;
     private LocalDateTime shareExpiresAt;
+    private Long ShareId;
 
 
 }

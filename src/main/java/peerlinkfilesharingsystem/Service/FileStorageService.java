@@ -58,7 +58,7 @@ public class FileStorageService {
     }
 
 
-    public boolean validateUserAccess(String requestingUserId, String filePath) {
+    public boolean  validateUserAccess(String requestingUserId, String filePath) {
         try {
             Path normalizedPath = Paths.get(filePath).normalize().toAbsolutePath();
             Path expectedUserDir = Paths.get(baseUploadDirectory, "user_" + requestingUserId)
@@ -66,7 +66,7 @@ public class FileStorageService {
 
             if (!normalizedPath.startsWith(expectedUserDir)) {
                 log.warn("SECURITY VIOLATION: User {} tried accessing {}", requestingUserId, filePath);
-                throw new UnauthorizedFileAccessException("Access denied: You cannot access this file");
+                throw new UnauthorizedFileAccessException("Access denied: You cannot access this file / Folder");
             }
 
             log.debug("Access granted: User {} accessing {}", requestingUserId, filePath);

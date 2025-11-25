@@ -15,7 +15,8 @@ public class FileCleanUp {
         this.fileDownloadService = fileStorageService;
     }
 
-        @Scheduled(cron = "0 * * * * *")
+//        @Scheduled(cron = "0 * * * * *")
+        @Scheduled(cron = "0 1 * * * *")
 //    @Scheduled(cron = "0 0 * * * *")
     public void deleteExpiredFile(){
         log.debug("Deleting expired files");

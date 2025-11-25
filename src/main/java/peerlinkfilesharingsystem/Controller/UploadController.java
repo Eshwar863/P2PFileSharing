@@ -39,7 +39,7 @@ public class UploadController {
 
         try {
             if (file.isEmpty() || file.getSize() == 0L || clientIp.isEmpty()) {
-                return ResponseEntity.status(404).body(
+                return ResponseEntity.status(400).body(
                         FileUploadResponse.builder()
                                 .success(false)
                                 .message("Upload failed: File Cant be Empty,Client IP Can't be Empty")
@@ -48,7 +48,7 @@ public class UploadController {
             }
 
             if (file.getSize() > 10 * 1024 * 1024 * 1024L) {
-                return ResponseEntity.status(404).body(
+                return ResponseEntity.status(413).body(
                         FileUploadResponse.builder()
                                 .success(false)
                                 .message("Upload failed: File Size Exceeded")
@@ -56,8 +56,12 @@ public class UploadController {
                 ).getBody();
             }
                 log.info("=== NEW UPLOAD DETECTED ===");
-                return ResponseEntity.ok(fileUploadService.handleFile(
-                        file, latencyMs, networkSpeedMbps, deviceType, clientIp)).getBody();
+            FileUploadResponse fileUploadResponse  = fileUploadService.handleFile(
+                    file, latencyMs, networkSpeedMbps, deviceType, clientIp);
+            if (fileUploadResponse ==  null) {
+                return (FileUploadResponse) ResponseEntity.status(HttpStatus.UNAUTHORIZED);
+            }
+                return ResponseEntity.ok(fileUploadResponse).getBody();
         }catch (Exception e){
             log.error("Error uploading file", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(

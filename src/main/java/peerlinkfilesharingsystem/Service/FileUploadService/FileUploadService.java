@@ -2,6 +2,8 @@ package peerlinkfilesharingsystem.Service.FileUploadService;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import peerlinkfilesharingsystem.Dto.FileUploadResponse;
@@ -68,7 +70,8 @@ public class FileUploadService {
             fileTransferEntity.setLatencyMs(latencyMs);
             fileTransferEntity.setNetworkSpeedMbps(networkSpeedMbps);
             fileTransferEntity.setClientIp(clientIp);
-            fileTransferEntity.setExpiresAt(LocalDateTime.now().plusMinutes(1));
+//            fileTransferEntity.setExpiresAt(LocalDateTime.now().plusMinutes(1));
+            fileTransferEntity.setExpiresAt(LocalDateTime.now().plusDays(2));
             log.info("FileTransferEntity created and saved");
 
             log.info("Requesting ML predictions...");
@@ -85,58 +88,63 @@ public class FileUploadService {
 
             fileTransferEntity.setCompressionLevel(params.getCompressionLevel());
             fileTransferEntity.setChunkSize(params.getChunkSize());
-            fileTransferRepo.save(fileTransferEntity);
+
             String Userpath  = fileStorageService.createUserDirectory(String.valueOf(fileTransferEntity.getUserId()));
-            log.info("Starting compression process..."+ Userpath);
-            long startTime = System.currentTimeMillis();
+            if (fileStorageService.validateUserAccess("13131",Userpath)) {
+                fileTransferRepo.save(fileTransferEntity);
 
-            CompressionResult compressionResult = processUploadWithCompression(
-                    file.getInputStream(),fileTransferEntity,Userpath,params);
+                log.info("Starting compression process..." + Userpath);
+                long startTime = System.currentTimeMillis();
 
-            long duration = (System.currentTimeMillis() - startTime) / 1000;
+                CompressionResult compressionResult = processUploadWithCompression(
+                        file.getInputStream(), fileTransferEntity, Userpath, params);
 
-            log.info("COMPRESSION RESULTS:");
-            log.info("  Original Size: {} bytes ({} MB)", compressionResult.totalBytesRead, compressionResult.totalBytesRead / 1024 / 1024);
-            log.info("  Compressed Size: {} bytes ({} MB)", compressionResult.totalBytesCompressed, compressionResult.totalBytesCompressed / 1024 / 1024);
-            log.info("  Compression Ratio: {:.2f}% saved",
-                    (1.0 - (double) compressionResult.totalBytesCompressed / compressionResult.totalBytesRead) * 100);
-            log.info("  Duration: {} seconds", duration);
-            log.info("  Chunks Processed: {}", compressionResult.chunkCount);
+                long duration = (System.currentTimeMillis() - startTime) / 1000;
 
-            fileTransferEntity.setBytesTransferred(compressionResult.totalBytesCompressed);
-            fileTransferEntity.setTransferDurationSeconds((int) duration);
-            fileTransferEntity.setSuccess(true);
-            fileTransferEntity.setCompletedAt(LocalDateTime.now());
-            fileTransferEntity.setStoragePath(Userpath + "/" + transferId);
-            fileTransferRepo.save(fileTransferEntity);
+                log.info("COMPRESSION RESULTS:");
+                log.info("  Original Size: {} bytes ({} MB)", compressionResult.totalBytesRead, compressionResult.totalBytesRead / 1024 / 1024);
+                log.info("  Compressed Size: {} bytes ({} MB)", compressionResult.totalBytesCompressed, compressionResult.totalBytesCompressed / 1024 / 1024);
+                log.info("  Compression Ratio: {:.2f}% saved",
+                        (1.0 - (double) compressionResult.totalBytesCompressed / compressionResult.totalBytesRead) * 100);
+                log.info("  Duration: {} seconds", duration);
+                log.info("  Chunks Processed: {}", compressionResult.chunkCount);
 
-            log.info("Updating ML Model Parameters...");
-            updateMLParamsAfterUpload(
-                    extension,
-                    params.getNetworkCondition(),
-                    params.getCompressionLevel(),
-                    params.getChunkSize(),
-                    true);
-            log.info("ML Model Parameters updated");
+                fileTransferEntity.setBytesTransferred(compressionResult.totalBytesCompressed);
+                fileTransferEntity.setTransferDurationSeconds((int) duration);
+                fileTransferEntity.setSuccess(true);
+                fileTransferEntity.setCompletedAt(LocalDateTime.now());
+                fileTransferEntity.setStoragePath(Userpath + "/" + transferId);
+                fileTransferRepo.save(fileTransferEntity);
 
-            double compressionRatio = (1.0 - (double) compressionResult.totalBytesCompressed / file.getSize()) * 100;
+                log.info("Updating ML Model Parameters...");
+                updateMLParamsAfterUpload(
+                        extension,
+                        params.getNetworkCondition(),
+                        params.getCompressionLevel(),
+                        params.getChunkSize(),
+                        true);
+                log.info("ML Model Parameters updated");
 
-            log.info("========== UPLOAD SUCCESS ==========\n");
+                double compressionRatio = (1.0 - (double) compressionResult.totalBytesCompressed / file.getSize()) * 100;
 
-            return FileUploadResponse.builder()
-                    .fileId(fileTransferEntity.getFileId())
-                    .transferId(transferId)
-                    .fileName(filename)
-                    .fileSizeBytes(file.getSize())
-                    .compressedSizeBytes(compressionResult.totalBytesCompressed)
-                    .compressionRatioPercent(String.format("%.2f%%", compressionRatio))
-                    .appliedCompressionLevel(params.getCompressionLevel())
-                    .appliedChunkSize(params.getChunkSize())
-                    .success(true)
-                    .message("File uploaded successfully with " + String.format("%.2f%%", compressionRatio) + " compression")
-                    .uploadedAt(LocalDateTime.now())
-                    .build();
 
+                log.info("========== UPLOAD SUCCESS ==========\n");
+
+                return FileUploadResponse.builder()
+                        .fileId(fileTransferEntity.getFileId())
+                        .transferId(transferId)
+                        .fileName(filename)
+                        .fileSizeBytes(file.getSize())
+                        .compressedSizeBytes(compressionResult.totalBytesCompressed)
+                        .compressionRatioPercent(String.format("%.2f%%", compressionRatio))
+                        .appliedCompressionLevel(params.getCompressionLevel())
+                        .appliedChunkSize(params.getChunkSize())
+                        .success(true)
+                        .message("File uploaded successfully with " + String.format("%.2f%%", compressionRatio) + " compression")
+                        .uploadedAt(LocalDateTime.now())
+                        .build();
+            }
+            return null;
         } catch (Exception e) {
             log.error("========== UPLOAD FAILED ==========", e);
             return FileUploadResponse.builder()

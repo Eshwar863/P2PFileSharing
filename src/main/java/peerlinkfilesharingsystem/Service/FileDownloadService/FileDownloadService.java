@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import peerlinkfilesharingsystem.Dto.FileShareDownloadDTO;
 import peerlinkfilesharingsystem.Enums.MarkFileAs;
+import peerlinkfilesharingsystem.Exception.UnauthorizedFileAccessException;
 import peerlinkfilesharingsystem.Model.ChunkedDownloadResource;
 import peerlinkfilesharingsystem.Model.FileDownload;
 import peerlinkfilesharingsystem.Model.FileShare;
@@ -14,6 +15,7 @@ import peerlinkfilesharingsystem.Model.FileTransferEntity;
 import peerlinkfilesharingsystem.Repo.FileDownloadRepo;
 import peerlinkfilesharingsystem.Repo.FileShareRepo;
 import peerlinkfilesharingsystem.Repo.FileTransferRepo;
+import peerlinkfilesharingsystem.Service.FileStorageService;
 import peerlinkfilesharingsystem.Service.IntelligencePredictionService.IntelligencePredictionService;
 
 import java.io.*;
@@ -26,6 +28,7 @@ public class FileDownloadService {
 
     private final FileDownloadRepo fileDownloadRepo;
     private final FileShareRepo fileShareRepo;
+    private final FileStorageService fileStorageService;
     private FileTransferRepo fileTransferRepo;
     private IntelligencePredictionService intelligencePredictionService;
 
@@ -34,11 +37,12 @@ public class FileDownloadService {
 
     public FileDownloadService(
             FileTransferRepo fileTransferRepo,
-            IntelligencePredictionService intelligencePredictionService, FileDownloadRepo fileDownloadRepo, FileShareRepo fileShareRepo) {
+            IntelligencePredictionService intelligencePredictionService, FileDownloadRepo fileDownloadRepo, FileShareRepo fileShareRepo, FileStorageService fileStorageService) {
         this.fileTransferRepo = fileTransferRepo;
         this.intelligencePredictionService = intelligencePredictionService;
         this.fileDownloadRepo = fileDownloadRepo;
         this.fileShareRepo = fileShareRepo;
+        this.fileStorageService = fileStorageService;
     }
 
 
@@ -143,9 +147,9 @@ public class FileDownloadService {
                 return null;
             }
 
-            if (transferOpt.isEmpty()) {
-                log.error("Transfer not found: {}", transferId);
-                return null;
+            if (fileStorageService.validateUserAccess("51531531L",transferOpt.get().getStoragePath())) {
+                log.error(": {}", transferId);
+                throw new UnauthorizedFileAccessException("Unauthorized");
             }
             FileTransferEntity transferEntity = transferOpt.get();
             FileDownload fileDownload = new FileDownload();
@@ -223,28 +227,28 @@ public class FileDownloadService {
         }
     }
 
-    public ResponseEntity<?> getPublicFile(String shareToken) {
-        Optional<FileTransferEntity> fileTransferEntity = fileTransferRepo.findByShareToken(shareToken);
+    public ResponseEntity<?> getTransferInfoOfPublicFile(String shareId) {
+        FileShare  fileShare = null;
+        try{
+            if (shareId.length() < 6){
+                 fileShare = fileShareRepo.findByShareId(Long.parseLong(shareId));
+                System.out.println(fileShare.toString()+"in IF");
+            }
+            else {
+                fileShare = fileShareRepo.findByShareToken(shareId);
+                System.out.println(fileShare.toString());
+            }
+            Optional<FileTransferEntity> transfer = fileTransferRepo.findByShareToken(fileShare.getShareToken());
+            if (fileShare == null || transfer == null) {
+                return new ResponseEntity<>("File Not Found or Link Expired ",HttpStatus.NOT_FOUND);       }
 
-        if (fileTransferEntity.isEmpty() || fileTransferEntity.get().getMarkFileAs() == MarkFileAs.PRIVATE) {
-            log.error("Transfer not found: {}", fileTransferEntity.get().getFileId());
+            return new ResponseEntity<>( new FileShareDownloadDTO(transfer.get().getSuccess(),fileShare.getShareToken(),transfer.get().getFileSize(),transfer.get().getFileName(),transfer.get().getFileType()),HttpStatus.OK);
+
+        }catch (Exception e){
             return ResponseEntity.notFound().build();
         }
-        if (fileTransferEntity.get().getMarkFileAs() == MarkFileAs.PUBLIC
-                && fileTransferEntity.get().getShareToken()!=null
-                && fileTransferEntity.get().getSuccess()) {
-        }
-        return ResponseEntity.ok(fileTransferEntity.get());
     }
 
-    public ResponseEntity<?> getTransferInfoOfPublicFile(String shareId) {
-        FileShare  fileShare  = fileShareRepo.findByShareToken(shareId);
-        Optional<FileTransferEntity> transfer = fileTransferRepo.findByShareToken(shareId);
-        if (fileShare == null || transfer == null) {
-            return new ResponseEntity<>("File Not Found or Link Expired ",HttpStatus.NOT_FOUND);       }
-
-        return new ResponseEntity<>( new FileShareDownloadDTO(transfer.get().getSuccess(),fileShare.getShareToken(),transfer.get().getFileSize(),transfer.get().getFileName(),transfer.get().getFileType()),HttpStatus.OK);
-    }
 
     public ChunkedDownloadResource downloadPublicFileWithAdaptiveChunking(
             String transferId,
