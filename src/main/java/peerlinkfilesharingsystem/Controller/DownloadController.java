@@ -152,18 +152,17 @@ public class DownloadController {
     }
 
     @GetMapping("/info/public/{shareId}")
-    public ResponseEntity<?> getTransferInfoOfPublicFile(
-            @PathVariable String shareId) {
-
+    public ResponseEntity<?> getTransferInfoOfPublicFile(@PathVariable String shareId) {
         log.info("Fetching transfer info for: {}", shareId);
 
         try {
-            ResponseEntity<?> transfer = fileDownloadService.getTransferInfoOfPublicFile(shareId);
+            ResponseEntity<?> response = fileDownloadService.getTransferInfoOfPublicFile(shareId);
 
-            if (transfer == null) {
+            if (response == null || !response.getStatusCode().is2xxSuccessful()) {
                 return ResponseEntity.notFound().build();
             }
-            return ResponseEntity.ok(transfer);
+
+            return ResponseEntity.ok(response.getBody());
 
         } catch (Exception e) {
             log.error("Error fetching transfer info", e);

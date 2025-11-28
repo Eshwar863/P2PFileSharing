@@ -176,9 +176,54 @@ public class FileShareService {
 
         return randomId;    }
 
+
+
+    public ResponseEntity<?> mailShareUrl(String transferId) {
+        Users users = retriveLoggedInUser();
+        Optional<FileTransferEntity> fileOpt = fileTransferRepo.findByShareToken(transferId);
+        System.out.println(fileOpt.get());
+        if (fileOpt.isEmpty()) {
+            return ResponseEntity.status(404).body("File not found");
+        }
+        try {
+            fileStorageService.validateUserAccess(users.getId().toString(), fileOpt.get().getStoragePath());
+        } catch (UnauthorizedFileAccessException ex) {
+            return new ResponseEntity<>("Invalid Access", HttpStatus.UNAUTHORIZED);
+        }
+
+
+        FileTransferEntity file = fileOpt.get();
+
+        if (file.getMarkFileAs() != MarkFileAs.PUBLIC) {
+            return ResponseEntity.status(403).body("File is not public");
+        }
+
+        FileShare fileShare = fileShareRepo.findByShareToken(file.getShareToken());
+        if (fileShare == null) {
+            return ResponseEntity.status(404).body("Share record not found");
+        }
+
+        if (fileShare.getShareExpiresAt().isBefore(LocalDateTime.now())) {
+            return ResponseEntity.status(410).body("Share link has expired");
+        }
+
+        String shareUrl = ServletUriComponentsBuilder
+                .fromCurrentContextPath()
+                .path("/files/info/public/")
+                .path(fileShare.getShareToken())
+                .toUriString();
+
+
+        ShareFileResponse response = new ShareFileResponse(
+                fileShare.getFileName(),
+                shareUrl,
+                fileShare.getShareId());
+        return ResponseEntity.ok(response);
+    }
+
     public ResponseEntity<?> sendLinkToEmail(EmailFileRequest emailFileRequest ) {
         retriveLoggedInUser();
-        ResponseEntity<?> shareFileResponse = getShareUrl(emailFileRequest.getShareToken());
+        ResponseEntity<?> shareFileResponse = mailShareUrl(emailFileRequest.getShareToken());
 
         if (!shareFileResponse.getStatusCode().is2xxSuccessful()) {
             return shareFileResponse; // return the error (404/401/403/410 → same)

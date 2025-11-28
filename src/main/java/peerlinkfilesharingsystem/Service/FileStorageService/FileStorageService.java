@@ -138,4 +138,63 @@ public class FileStorageService {
         }
     }
 
+    public void deleteExpiredFilesinTransferEntity() {
+        LocalDateTime now = LocalDateTime.now();
+
+        List<FileTransferEntity> expiredFiles = fileTransferRepo
+                .findByExpiresAtBeforeAndDeletedFalse(now);
+
+        if (expiredFiles.isEmpty()) {
+            log.info("No expired files found");
+            return;
+        }
+
+        expiredFiles.forEach(file -> {
+            file.setDeleted(true);
+            file.setStatus("EXPIRED");
+        });
+
+        fileTransferRepo.saveAll(expiredFiles);
+
+        log.info("Expired files deleted: {}", expiredFiles.size());
+    }
+
+
+
+    public void deleteUnsuccessfulFilesinTransferEntity() {
+
+        List<FileTransferEntity> failedFiles = fileTransferRepo.findBySuccessFalseOrStatus("FAILED");
+
+        log.info("Unsuccessful transfers found: {}", failedFiles.size());
+
+        for (FileTransferEntity file : failedFiles) {
+
+            try {
+                if (file.getStoragePath() != null) {
+                    File f = new File(file.getStoragePath());
+                    if (f.exists()) {
+                        boolean deleted = f.delete();
+                        log.info("Deleted failed file from disk: {} -> {}",
+                                file.getStoragePath(), deleted);
+                    }
+                }
+
+                fileTransferRepo.delete(file);
+                log.info("Deleted failed file metadata with transferId: {}", file.getTransferId());
+
+            } catch (Exception e) {
+                log.error("Error deleting failed file {} : {}", file.getTransferId(), e.getMessage());
+            }
+        }
+    }
+
+//    private void deleteFileFromDisk(String path) {
+//        if (path == null) return;
+//
+//        File f = new File(path);
+//        if (f.exists()) {
+//            boolean result = f.delete();
+//            log.info("Deleted file from disk {} -> {}", path, result);
+//        }
+//    }
 }

@@ -47,6 +47,10 @@ public class UserServiceImpl implements UserService{
         if (existing != null) {
             return new ResponseEntity<>("User already exists", HttpStatus.CONFLICT);
         }
+        Users existingname = userRepo.findByUsername(users.getUsername());
+        if (existingname != null) {
+            return new ResponseEntity<>("User already exists", HttpStatus.CONFLICT);
+        }
 
         if (users.getEmail().isEmpty() || users.getPassword().isEmpty() || users.getUsername().isEmpty()) {
             return new ResponseEntity<>("Please fill all the details", HttpStatus.BAD_REQUEST);

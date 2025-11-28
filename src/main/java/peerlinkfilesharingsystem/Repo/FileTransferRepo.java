@@ -37,4 +37,10 @@ public interface FileTransferRepo extends JpaRepository<FileTransferEntity,UUID>
 
     @Query("SELECT CASE WHEN COUNT(f) > 0 THEN true ELSE false END FROM FileShare f WHERE f.ShareId = :shareId")
     boolean checkShareId(@Param("shareId") Long shareId);
+
+
+
+    List<FileTransferEntity> findBySuccessFalseOrStatus(String failed);
+
+    List<FileTransferEntity> findByExpiresAtBeforeAndDeletedFalse(LocalDateTime now);
 }

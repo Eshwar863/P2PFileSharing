@@ -74,9 +74,15 @@ public class FileDownloadService {
     }
     public FileTransferEntity getShareById(String ShareId) {
         log.info("Querying database for ShareId: {}", ShareId);
-
+        FileShare fileShare = null;
         try {
-            Optional<FileTransferEntity> transferOpt = fileTransferRepo.findByShareToken(ShareId);
+                if (ShareId.length() < 6) {
+                    fileShare = fileShareRepo.findByShareId(Long.parseLong(ShareId));
+                } else {
+                    fileShare = fileShareRepo.findByShareToken(ShareId);
+                }
+
+            Optional<FileTransferEntity> transferOpt = fileTransferRepo.findByShareToken(fileShare.getShareToken());
 
             if (transferOpt.isPresent()) {
                 FileTransferEntity transfer = transferOpt.get();
@@ -150,12 +156,8 @@ public class FileDownloadService {
                 log.error("Transfer not found: {}", transferId);
                 return null;
             }
+            log.error("File Transfer Id : {} ", transferId);
 
-            if (!fileStorageService.validateUserAccess(users.getId().toString(),transferOpt.get().getStoragePath())) {
-                log.error("File Transfer Id : {} ", transferId);
-                System.out.println(fileStorageService.validateUserAccess(users.getId().toString(),transferOpt.get().getStoragePath()));
-                throw new UnauthorizedFileAccessException("Unauthorized");
-            }
             FileTransferEntity transferEntity = transferOpt.get();
             FileDownload fileDownload = new FileDownload();
             fileDownload.setTransferId(transferId);
@@ -232,28 +234,54 @@ public class FileDownloadService {
             return null;
         }
     }
-
     public ResponseEntity<?> getTransferInfoOfPublicFile(String shareId) {
-        FileShare  fileShare = null;
-        try{
-            if (shareId.length() < 6){
-                 fileShare = fileShareRepo.findByShareId(Long.parseLong(shareId));
-                System.out.println(fileShare.toString()+"in IF");
-            }
-            else {
+        FileShare fileShare = null;
+        try {
+            if (shareId.length() < 6) {
+                fileShare = fileShareRepo.findByShareId(Long.parseLong(shareId));
+            } else {
                 fileShare = fileShareRepo.findByShareToken(shareId);
-                System.out.println(fileShare.toString());
             }
-            Optional<FileTransferEntity> transfer = fileTransferRepo.findByShareToken(fileShare.getShareToken());
-            if (fileShare == null || transfer == null) {
-                return new ResponseEntity<>("File Not Found or Link Expired ",HttpStatus.NOT_FOUND);       }
 
-            return new ResponseEntity<>( new FileShareDownloadDTO(transfer.get().getSuccess(),fileShare.getShareToken(),transfer.get().getFileSize(),transfer.get().getFileName(),transfer.get().getFileType()),HttpStatus.OK);
+            if (fileShare == null) {
+                return new ResponseEntity<>("File Not Found or Link Expired", HttpStatus.NOT_FOUND);
+            }
 
-        }catch (Exception e){
-            return ResponseEntity.notFound().build();
+            Optional<FileTransferEntity> transferOpt = fileTransferRepo.findByShareToken(fileShare.getShareToken());
+
+            if (transferOpt.isEmpty()) {
+                return new ResponseEntity<>("File Not Found", HttpStatus.NOT_FOUND);
+            }
+
+            FileTransferEntity transfer = transferOpt.get();
+
+            double compressionRatio = 0.0;
+            if (transfer.getFileSize() != null && transfer.getFileSize() > 0 &&
+                    transfer.getBytesTransferred() != null && transfer.getBytesTransferred() > 0) {
+                compressionRatio = (1.0 - (double) transfer.getBytesTransferred() / transfer.getFileSize()) * 100;
+            }
+
+            FileShareDownloadDTO dto = FileShareDownloadDTO.builder()
+                    .success(transfer.getSuccess())
+                    .shareToken(fileShare.getShareToken())
+                    .fileName(transfer.getFileName())
+                    .fileType(transfer.getFileType())
+                    .originalSizeBytes(transfer.getFileSize())
+                    .compressedSizeBytes(transfer.getBytesTransferred())
+                    .compressionRatioPercent(String.format("%.2f%%", compressionRatio))
+                    .uploadedAt(transfer.getCreatedAt())
+                    .completedAt(transfer.getCompletedAt())
+                    .build();
+
+            return new ResponseEntity<>(dto, HttpStatus.OK);
+
+        } catch (Exception e) {
+            log.error("Error getting public file info", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error retrieving file information");
         }
     }
+
 
 
     public ChunkedDownloadResource downloadPublicFileWithAdaptiveChunking(

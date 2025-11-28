@@ -22,9 +22,14 @@ public class FileCleanUp {
         log.debug("Deleting expired files");
         fileDownloadService.deleteExpiredFiles();
     }
-//    @Scheduled(cron = "0 1 * * * *")
-//    public void deleteExpiredFilesinTransferEntity(){
-//        log.debug("Deleting expired files");
-//        fileDownloadService.deleteExpiredFiles();
-//    }
+    @Scheduled(cron = "0 5 * * * *")
+    public void deleteExpiredFilesinTransferEntity(){
+        log.debug("Deleting expired files");
+        fileDownloadService.deleteExpiredFilesinTransferEntity();
+    }
+    @Scheduled(cron = "0 8 * * * *")
+    public void deleteUnsuccessFulFilesinTransferEntity(){
+        log.debug("Deleting expired files");
+        fileDownloadService.deleteUnsuccessfulFilesinTransferEntity();
+    }
 }
