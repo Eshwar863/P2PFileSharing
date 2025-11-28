@@ -1,23 +1,18 @@
 package peerlinkfilesharingsystem.Model;
 
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
+import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToOne;
+import lombok.Data;
 
 import java.time.LocalDateTime;
 
+@Data
+@Entity
 public class Otp {
-
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
-    private Long id;
     private String otp;
-
-    @OneToOne(mappedBy = "otp")
-    private Users users;
-    private String sentToEmail;
-    private LocalDateTime expiryTime;
-    private String status;
-    private LocalDateTime createdAt;
+    private LocalDateTime otpTime;
+    @OneToOne
+    private Users user;
 }

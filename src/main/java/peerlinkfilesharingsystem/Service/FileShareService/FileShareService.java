@@ -3,18 +3,26 @@ package peerlinkfilesharingsystem.Service.FileShareService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import peerlinkfilesharingsystem.Config.SecurityConfig;
+import peerlinkfilesharingsystem.Dto.EmailFileRequest;
 import peerlinkfilesharingsystem.Dto.ShareFileResponse;
 import peerlinkfilesharingsystem.Enums.MarkFileAs;
 import peerlinkfilesharingsystem.Exception.UnauthorizedFileAccessException;
 import peerlinkfilesharingsystem.Model.FileShare;
 import peerlinkfilesharingsystem.Model.FileTransferEntity;
+import peerlinkfilesharingsystem.Model.Users;
 import peerlinkfilesharingsystem.Repo.FileShareRepo;
 import peerlinkfilesharingsystem.Repo.FileTransferRepo;
-import peerlinkfilesharingsystem.Service.FileStorageService;
+import peerlinkfilesharingsystem.Repo.UserRepo;
+import peerlinkfilesharingsystem.Service.FileStorageService.FileStorageService;
+import peerlinkfilesharingsystem.Service.MailService.MailService;
 
 import java.io.FileNotFoundException;
 import java.time.LocalDateTime;
@@ -28,12 +36,16 @@ public class FileShareService {
     private final FileShareRepo fileShareRepo;
     private final SecurityConfig config;
     private final FileStorageService fileStorageService;
+    private final MailService mailService;
+    private final UserRepo userRepo;
 
-    public FileShareService(FileTransferRepo fileTransferRepo, FileShareRepo fileShareRepo, SecurityConfig config, FileStorageService fileStorageService, FileStorageService fileStorageService1) {
+    public FileShareService(FileTransferRepo fileTransferRepo, FileShareRepo fileShareRepo, SecurityConfig config, FileStorageService fileStorageService, FileStorageService fileStorageService1, MailService mailService1,UserRepo userRepo) {
         this.fileTransferRepo = fileTransferRepo;
         this.fileShareRepo = fileShareRepo;
         this.config = config;
         this.fileStorageService = fileStorageService1;
+        this.mailService = mailService1;
+        this.userRepo = userRepo;
     }
 
     public ResponseEntity<?> markFileAspublic(String transferId) {
@@ -45,9 +57,10 @@ public class FileShareService {
                         "File transfer not found with ID: " + transferId)
                 );
         log.info("fileTransfer Entity: {}", fileTransferEntity);
+        Users users = retriveLoggedInUser();
 
         try {
-            fileStorageService.validateUserAccess("13131", fileTransferEntity.getStoragePath());
+            fileStorageService.validateUserAccess(users.getId().toString(), fileTransferEntity.getStoragePath());
         } catch (UnauthorizedFileAccessException ex) {
             return new ResponseEntity<>("Invalid Access", HttpStatus.UNAUTHORIZED);
         }
@@ -81,13 +94,14 @@ public class FileShareService {
 
 
     public ResponseEntity<?> getShareUrl(String transferId) {
-
+        Users users = retriveLoggedInUser();
         Optional<FileTransferEntity> fileOpt = fileTransferRepo.findByTransferId(transferId);
+        System.out.println(fileOpt.get());
         if (fileOpt.isEmpty()) {
             return ResponseEntity.status(404).body("File not found");
         }
         try {
-            fileStorageService.validateUserAccess("13131", fileOpt.get().getStoragePath());
+            fileStorageService.validateUserAccess(users.getId().toString(), fileOpt.get().getStoragePath());
         } catch (UnauthorizedFileAccessException ex) {
             return new ResponseEntity<>("Invalid Access", HttpStatus.UNAUTHORIZED);
         }
@@ -119,11 +133,10 @@ public class FileShareService {
                 fileShare.getFileName(),
                 shareUrl,
                 fileShare.getShareId());
-
         return ResponseEntity.ok(response);
     }
     public ResponseEntity<?> markFileAsPrivate(String transferId) throws FileNotFoundException {
-
+        Users users = retriveLoggedInUser();
 //        Optional<FileTransferEntity> fileTransferEntity = Optional.ofNullable(fileTransferRepo.findByTransferId(transferId).orElseThrow(() ->
         //new FileNotFoundException("File Not Found")));
         FileTransferEntity fileTransferEntity = fileTransferRepo.findByTransferId(transferId)
@@ -133,7 +146,7 @@ public class FileShareService {
                 );
         System.out.println(fileTransferEntity.getStoragePath());
         try {
-            fileStorageService.validateUserAccess("13131", fileTransferEntity.getStoragePath());
+            fileStorageService.validateUserAccess(users.getId().toString(), fileTransferEntity.getStoragePath());
         } catch (UnauthorizedFileAccessException ex) {
             return new ResponseEntity<>("Invalid Access", HttpStatus.UNAUTHORIZED);
         }
@@ -162,4 +175,66 @@ public class FileShareService {
         } while (fileShareRepo.checkShareId(randomId));
 
         return randomId;    }
+
+    public ResponseEntity<?> sendLinkToEmail(EmailFileRequest emailFileRequest ) {
+        retriveLoggedInUser();
+        ResponseEntity<?> shareFileResponse = getShareUrl(emailFileRequest.getShareToken());
+
+        if (!shareFileResponse.getStatusCode().is2xxSuccessful()) {
+            return shareFileResponse; // return the error (404/401/403/410 → same)
+        }
+
+        Object body = shareFileResponse.getBody();
+
+        if (!(body instanceof ShareFileResponse)) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Invalid response format");
+        }
+
+        ShareFileResponse response = (ShareFileResponse) body;
+
+        try {
+            if (mailService.sendLinkToMail(response, emailFileRequest.getEmail())) {
+                return ResponseEntity.ok("Link has been sent");
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error sending link to email");
+        }
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body("Error sending link to email");
+    }
+
+    public ResponseEntity<?> markedStatus(String transferId) {
+        Users users = retriveLoggedInUser();
+        FileTransferEntity fileTransferEntity = fileTransferRepo.findByTransferId(transferId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "File transfer not found with ID: " + transferId)
+                );
+        try {
+            fileStorageService.validateUserAccess(users.getId().toString(), fileTransferEntity.getStoragePath());
+        } catch (UnauthorizedFileAccessException ex) {
+            return new ResponseEntity<>("Invalid Access", HttpStatus.UNAUTHORIZED);
+        }
+        if(fileTransferEntity.getMarkFileAs() == MarkFileAs.PRIVATE) {
+            return new ResponseEntity<>(MarkFileAs.PRIVATE,HttpStatus.OK);
+        }
+        return new ResponseEntity<>(MarkFileAs.PUBLIC,HttpStatus.OK);
+    }
+
+    private Users retriveLoggedInUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if(authentication == null || !authentication.isAuthenticated())
+            throw new BadCredentialsException("Bad Credentials login ");
+        String username = authentication.getName();
+//        System.out.println(STR."In Logged In User \{username}");
+        System.out.println("Logged In User "+username);
+        Users user = userRepo.findByUsername(username);
+        if(user == null){
+            throw new UsernameNotFoundException("User Not Found");
+        }
+        return user;
+    }
 }

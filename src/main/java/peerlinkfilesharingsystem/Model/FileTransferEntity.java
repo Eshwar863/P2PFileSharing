@@ -20,7 +20,7 @@ public class FileTransferEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private long fileId;
 
-    @Column(unique = true, nullable = false)
+    @Column(name = "transfer_id", unique = true, nullable = false)
     private String transferId;
 
     private String fileName;
@@ -42,7 +42,7 @@ public class FileTransferEntity {
     @CreationTimestamp
     private LocalDateTime createdAt;
     private LocalDateTime expiresAt;
-    private Long userId;
+    private UUID userId;
     private MarkFileAs markFileAs = MarkFileAs.PRIVATE;
     private String status;
     private LocalDateTime completedAt;

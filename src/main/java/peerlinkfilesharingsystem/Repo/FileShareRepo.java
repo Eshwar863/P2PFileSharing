@@ -3,8 +3,10 @@ package peerlinkfilesharingsystem.Repo;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 import peerlinkfilesharingsystem.Model.FileShare;
 
+@Repository
 public interface FileShareRepo extends JpaRepository<FileShare, Long> {
     FileShare findByShareToken(String shareToken);
 

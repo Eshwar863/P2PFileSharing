@@ -1,18 +1,20 @@
 package peerlinkfilesharingsystem.Model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
+import lombok.Data;
+import peerlinkfilesharingsystem.Enums.UserRole;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@Entity
+@Data
 public class Users {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue
+    @Column(columnDefinition = "BINARY(16)")
     private UUID id;
     @Column(unique = true, nullable = false)
     private String username;
@@ -20,7 +22,7 @@ public class Users {
     private String password;
     @Column(unique = true, nullable = false)
     private String email;
-    private String role;
-
-    HashSet<String> Sharedfiles;
+    private UserRole role;
+//    @OneToOne(mappedBy = "users")
+//    private Otp otp;
 }

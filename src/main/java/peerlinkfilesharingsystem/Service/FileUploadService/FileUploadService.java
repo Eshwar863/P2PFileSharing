@@ -2,24 +2,27 @@ package peerlinkfilesharingsystem.Service.FileUploadService;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import peerlinkfilesharingsystem.Dto.FileUploadResponse;
 import peerlinkfilesharingsystem.Model.FileTransferEntity;
 import peerlinkfilesharingsystem.Model.IntelligentModelParametersEntity;
+import peerlinkfilesharingsystem.Model.Users;
 import peerlinkfilesharingsystem.Repo.FileTransferRepo;
 import peerlinkfilesharingsystem.Repo.IntelligentModelParametersRepo;
+import peerlinkfilesharingsystem.Repo.UserRepo;
 import peerlinkfilesharingsystem.Service.CompressionService.FileCompressionService;
-import peerlinkfilesharingsystem.Service.FileStorageService;
+import peerlinkfilesharingsystem.Service.FileStorageService.FileStorageService;
 import peerlinkfilesharingsystem.Service.IntelligencePredictionService.IntelligencePredictionService;
 
 import java.io.*;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 @Service
 @Slf4j
@@ -33,26 +36,32 @@ public class FileUploadService {
     private IntelligencePredictionService intelligencePredictionService;
     private FileCompressionService compressionService;
     private IntelligentModelParametersRepo intelligentModelParametersRepo;
+    private UserRepo userRepo;
 
 
     public FileUploadService(FileTransferRepo fileTransferRepo,
                              IntelligencePredictionService intelligencePredictionService,
                              FileCompressionService fileCompressionService,
-                             IntelligentModelParametersRepo intelligentModelParametersRepo, FileStorageService fileStorageService
+                             IntelligentModelParametersRepo intelligentModelParametersRepo, FileStorageService fileStorageService,
+                             UserRepo userRepo
+
                              ) {
         this.fileTransferRepo = fileTransferRepo;
         this.intelligencePredictionService = intelligencePredictionService;
         this.compressionService = fileCompressionService;
         this.intelligentModelParametersRepo = intelligentModelParametersRepo;
         this.fileStorageService = fileStorageService;
+        this.userRepo = userRepo;
+
     }
 
     public FileUploadResponse handleFile(MultipartFile file, Integer latencyMs,
                                          Double networkSpeedMbps, String deviceType, String clientIp) {
-        String transferId = UUID.randomUUID().toString();
+        String transferId = String.valueOf(generateUniqueShareId());
         String filename = file.getOriginalFilename();
         String extension = extractFileType(filename);
 
+        Users users  = retriveLoggedInUser();
         log.info("========== UPLOAD START ==========");
         log.info("TransferID: {}", transferId);
         log.info("Filename: {}, Extension: {}", filename, extension);
@@ -62,7 +71,7 @@ public class FileUploadService {
         try {
             FileTransferEntity fileTransferEntity = new FileTransferEntity();
             fileTransferEntity.setTransferId(transferId);
-            fileTransferEntity.setUserId(13131L); /// replace it with Actual JWT userid
+            fileTransferEntity.setUserId(users.getId());
             fileTransferEntity.setFileName(filename);
             fileTransferEntity.setFileType(extension);
             fileTransferEntity.setDeviceType(deviceType);
@@ -90,7 +99,7 @@ public class FileUploadService {
             fileTransferEntity.setChunkSize(params.getChunkSize());
 
             String Userpath  = fileStorageService.createUserDirectory(String.valueOf(fileTransferEntity.getUserId()));
-            if (fileStorageService.validateUserAccess("13131",Userpath)) {
+            if (fileStorageService.validateUserAccess(users.getId().toString(),Userpath)) {
                 fileTransferRepo.save(fileTransferEntity);
 
                 log.info("Starting compression process..." + Userpath);
@@ -269,9 +278,36 @@ public class FileUploadService {
         return "unknown";
     }
 
+    public Long generateRandomId() {
+        return 10000 + (long)(Math.random() * 90000);
+    }
+
+    public String generateUniqueShareId() {
+        Long randomId;
+
+        do {
+            randomId = generateRandomId();
+        } while (fileTransferRepo.checkShareId(randomId));
+
+        return randomId.toString();    }
+
+
+    private Users retriveLoggedInUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if(authentication == null || !authentication.isAuthenticated())
+            throw new BadCredentialsException("Bad Credentials login ");
+        String username = authentication.getName();
+        Users user = userRepo.findByUsername(username);
+        if(user == null){
+            throw new UsernameNotFoundException("User Not Found");
+        }
+        return user;
+    }
+
+
     public List<FileTransferEntity> getRecentTransfers(Integer limit) {
-        String id = "13131"; /// TODO : userId from JWT
-        return fileTransferRepo.findLastUploads(id,limit);
+        Users users = retriveLoggedInUser();
+        return fileTransferRepo.findLastUploads(users.getId(),limit);
     }
 
     private static class CompressionResult {

@@ -1,5 +1,9 @@
 package peerlinkfilesharingsystem.Dto;
 
+
+import lombok.Data;
+
+@Data
 public class ShareFileResponse {
     private String fileName;
     private Long shareport;

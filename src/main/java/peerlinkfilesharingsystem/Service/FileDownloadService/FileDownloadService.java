@@ -1,24 +1,26 @@
 package peerlinkfilesharingsystem.Service.FileDownloadService;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import peerlinkfilesharingsystem.Dto.FileShareDownloadDTO;
 import peerlinkfilesharingsystem.Enums.MarkFileAs;
 import peerlinkfilesharingsystem.Exception.UnauthorizedFileAccessException;
-import peerlinkfilesharingsystem.Model.ChunkedDownloadResource;
-import peerlinkfilesharingsystem.Model.FileDownload;
-import peerlinkfilesharingsystem.Model.FileShare;
-import peerlinkfilesharingsystem.Model.FileTransferEntity;
+import peerlinkfilesharingsystem.Model.*;
 import peerlinkfilesharingsystem.Repo.FileDownloadRepo;
 import peerlinkfilesharingsystem.Repo.FileShareRepo;
 import peerlinkfilesharingsystem.Repo.FileTransferRepo;
-import peerlinkfilesharingsystem.Service.FileStorageService;
+import peerlinkfilesharingsystem.Repo.UserRepo;
+import peerlinkfilesharingsystem.Service.FileStorageService.FileStorageService;
 import peerlinkfilesharingsystem.Service.IntelligencePredictionService.IntelligencePredictionService;
 
 import java.io.*;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.zip.GZIPInputStream;
 
@@ -31,18 +33,21 @@ public class FileDownloadService {
     private final FileStorageService fileStorageService;
     private FileTransferRepo fileTransferRepo;
     private IntelligencePredictionService intelligencePredictionService;
+    private UserRepo userRepo;
 
     private static final int GZIP_MAGIC_BYTE_1 = 0x1f;
     private static final int GZIP_MAGIC_BYTE_2 = 0x8b;
 
     public FileDownloadService(
             FileTransferRepo fileTransferRepo,
+            UserRepo userRepo,
             IntelligencePredictionService intelligencePredictionService, FileDownloadRepo fileDownloadRepo, FileShareRepo fileShareRepo, FileStorageService fileStorageService) {
         this.fileTransferRepo = fileTransferRepo;
         this.intelligencePredictionService = intelligencePredictionService;
         this.fileDownloadRepo = fileDownloadRepo;
         this.fileShareRepo = fileShareRepo;
         this.fileStorageService = fileStorageService;
+        this.userRepo = userRepo;
     }
 
 
@@ -51,8 +56,7 @@ public class FileDownloadService {
 
         try {
             Optional<FileTransferEntity> transferOpt = fileTransferRepo.findByTransferId(transferId);
-
-            if (transferOpt.isPresent()) {
+            if (transferOpt.get() != null) {
                 FileTransferEntity transfer = transferOpt.get();
                 log.info("Transfer found in database");
                 log.debug("  ID: {}, File: {}, Path: {}",
@@ -131,7 +135,7 @@ public class FileDownloadService {
             String transferId,
             Double networkSpeedMbps,
             Integer latencyMs) {
-
+        Users users  = retriveLoggedInUser();
         log.info("Starting adaptive chunked download for transferId: {}", transferId);
 
         try {
@@ -147,8 +151,9 @@ public class FileDownloadService {
                 return null;
             }
 
-            if (fileStorageService.validateUserAccess("51531531L",transferOpt.get().getStoragePath())) {
-                log.error(": {}", transferId);
+            if (!fileStorageService.validateUserAccess(users.getId().toString(),transferOpt.get().getStoragePath())) {
+                log.error("File Transfer Id : {} ", transferId);
+                System.out.println(fileStorageService.validateUserAccess(users.getId().toString(),transferOpt.get().getStoragePath()));
                 throw new UnauthorizedFileAccessException("Unauthorized");
             }
             FileTransferEntity transferEntity = transferOpt.get();
@@ -160,6 +165,7 @@ public class FileDownloadService {
             fileDownload.setFileSize(transferEntity.getFileSize());
             fileDownload.setFileType(transferEntity.getFileType());
             fileDownload.setChunkSize(transferOpt.get().getChunkSize());
+            fileDownload.setTransferDurationSeconds(LocalDateTime.now());
             fileDownloadRepo.save(fileDownload);
             FileTransferEntity transfer = transferOpt.get();
             transfer.setDownloadCount(transfer.getDownloadCount() + 1);
@@ -348,6 +354,21 @@ public class FileDownloadService {
             log.error("Error in adaptive download for transferId: {}", transferId, e);
             return null;
         }
+    }
+
+
+    private Users retriveLoggedInUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if(authentication == null || !authentication.isAuthenticated())
+            throw new BadCredentialsException("Bad Credentials login ");
+        String username = authentication.getName();
+//        System.out.println(STR."In Logged In User \{username}");
+        System.out.println("Logged In User "+username);
+        Users user = userRepo.findByUsername(username);
+        if(user == null){
+            throw new UsernameNotFoundException("User Not Found");
+        }
+        return user;
     }
 
     @Slf4j

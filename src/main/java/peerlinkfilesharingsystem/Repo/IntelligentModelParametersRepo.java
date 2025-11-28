@@ -2,12 +2,13 @@ package peerlinkfilesharingsystem.Repo;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
 import peerlinkfilesharingsystem.Model.FileTransferEntity;
 import peerlinkfilesharingsystem.Model.IntelligentModelParametersEntity;
 
 import java.util.List;
 import java.util.Optional;
-
+@Repository
 public interface IntelligentModelParametersRepo extends JpaRepository<IntelligentModelParametersEntity,Long> {
 
     Optional<IntelligentModelParametersEntity> findByFileTypeAndNetworkCondition(String fileType, String networkCondition);

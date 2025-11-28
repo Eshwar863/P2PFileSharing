@@ -3,7 +3,7 @@ package peerlinkfilesharingsystem.Controller;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.RestController;
-import peerlinkfilesharingsystem.Service.FileStorageService;
+import peerlinkfilesharingsystem.Service.FileStorageService.FileStorageService;
 
 @RestController
 @Slf4j
@@ -16,10 +16,15 @@ public class FileCleanUp {
     }
 
 //        @Scheduled(cron = "0 * * * * *")
-        @Scheduled(cron = "0 1 * * * *")
+@Scheduled(cron = "0 1 * * * *")
 //    @Scheduled(cron = "0 0 * * * *")
     public void deleteExpiredFile(){
         log.debug("Deleting expired files");
         fileDownloadService.deleteExpiredFiles();
     }
+//    @Scheduled(cron = "0 1 * * * *")
+//    public void deleteExpiredFilesinTransferEntity(){
+//        log.debug("Deleting expired files");
+//        fileDownloadService.deleteExpiredFiles();
+//    }
 }

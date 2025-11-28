@@ -15,15 +15,15 @@ import java.util.UUID;
 @Repository
 public interface FileTransferRepo extends JpaRepository<FileTransferEntity,UUID> {
 
-    Optional<FileTransferEntity> findByTransferId(String transferId);
 
     @Query(value = "SELECT * FROM file_transfer_entity " +
             "WHERE user_id = :userId " +
             "ORDER BY file_id DESC " +
             "LIMIT :limit",
             nativeQuery = true)
-    List<FileTransferEntity> findLastUploads(@Param("userId") String userId,
+    List<FileTransferEntity> findLastUploads(@Param("userId") UUID userId,
                                              @Param("limit") int limit);
+
 
     Optional<FileTransferEntity> findByShareToken(String shareToken);
 
@@ -33,4 +33,8 @@ public interface FileTransferRepo extends JpaRepository<FileTransferEntity,UUID>
             nativeQuery = true)
     List<FileTransferEntity> findExpiredFiles(@Param("time") LocalDateTime time);
 
+    Optional<FileTransferEntity> findByTransferId(String transferId);
+
+    @Query("SELECT CASE WHEN COUNT(f) > 0 THEN true ELSE false END FROM FileShare f WHERE f.ShareId = :shareId")
+    boolean checkShareId(@Param("shareId") Long shareId);
 }
