@@ -19,7 +19,7 @@ public class FileCompressionService {
      * - File integrity preserved
      * - Compatible with all tools (7zip, gunzip, WinRAR, etc)
      */
-    public long compressFileToGzip(String inputFilePath, String outputFilePath) throws IOException {
+    public long compressFileToGzip(String inputFilePath, String outputFilePath,Integer chunkSize ) throws IOException {
         log.info("Starting GZIP compression of entire file");
         log.info("  Input: {}", inputFilePath);
         log.info("  Output: {}", outputFilePath);
@@ -38,7 +38,7 @@ public class FileCompressionService {
              FileOutputStream fos = new FileOutputStream(outputFilePath);
              GZIPOutputStream gzipOut = new GZIPOutputStream(fos)) {
 
-            byte[] buffer = new byte[8192];  // 8KB buffer
+            byte[] buffer = new byte[chunkSize];
             int bytesRead;
             long totalBytesRead = 0;
 

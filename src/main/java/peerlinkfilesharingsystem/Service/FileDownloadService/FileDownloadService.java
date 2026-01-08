@@ -140,7 +140,8 @@ public class FileDownloadService {
     public ChunkedDownloadResource downloadFileWithAdaptiveChunking(
             String transferId,
             Double networkSpeedMbps,
-            Integer latencyMs) {
+            Integer latencyMs,
+            String deviceType) {
         Users users  = retriveLoggedInUser();
         log.info("Starting adaptive chunked download for transferId: {}", transferId);
 
@@ -196,7 +197,7 @@ public class FileDownloadService {
                             extension,
                             networkSpeedMbps,
                             latencyMs,
-                            transfer.getFileSize()
+                            transfer.getFileSize(),deviceType
                     );
 
             log.info("Optimization Parameters:");
@@ -288,7 +289,8 @@ public class FileDownloadService {
             String transferId,
             Double networkSpeedMbps,
             String shareId,
-            Integer latencyMs) {
+            Integer latencyMs,
+    String deviceType) {
 
         log.info("Starting adaptive chunked download for transferId: {}", transferId);
 
@@ -345,7 +347,7 @@ public class FileDownloadService {
                             extension,
                             networkSpeedMbps,
                             latencyMs,
-                            transfer.getFileSize()
+                            transfer.getFileSize(),deviceType
                     );
 
             log.info("Optimization Parameters:");

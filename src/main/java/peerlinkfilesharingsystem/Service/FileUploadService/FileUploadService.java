@@ -45,7 +45,7 @@ public class FileUploadService {
                              IntelligentModelParametersRepo intelligentModelParametersRepo, FileStorageService fileStorageService,
                              UserRepo userRepo
 
-                             ) {
+    ) {
         this.fileTransferRepo = fileTransferRepo;
         this.intelligencePredictionService = intelligencePredictionService;
         this.compressionService = fileCompressionService;
@@ -86,14 +86,14 @@ public class FileUploadService {
             log.info("Requesting ML predictions...");
             IntelligencePredictionService.OptimizationParams params =
                     intelligencePredictionService.predictOptimalParameters(
-                            filename, extension, networkSpeedMbps, latencyMs, file.getSize());
+                            filename, extension, networkSpeedMbps, latencyMs, file.getSize(),deviceType);
 
             log.info("ML PREDICTION RESULTS:");
             log.info("  Compression Level: {} (higher = more compression)", params.getCompressionLevel());
             log.info("  Chunk Size: {} bytes ({} KB)", params.getChunkSize(), params.getChunkSize() / 1024);
             log.info("  Network Condition: {}", params.getNetworkCondition());
             log.info("  Est. Time Saving: {}%", params.getEstimatedTimeSavingPercent());
-            log.info("  Predicted Success Rate: {:.2f}%", params.getPredictedSuccessRate() * 100);
+            log.info("  Predicted Success Rate: {}%", String.format("%.2f", params.getPredictedSuccessRate() * 100));
 
             fileTransferEntity.setCompressionLevel(params.getCompressionLevel());
             fileTransferEntity.setChunkSize(params.getChunkSize());
@@ -110,11 +110,11 @@ public class FileUploadService {
 
                 long duration = (System.currentTimeMillis() - startTime) / 1000;
 
+                double compressionRatioCalc = (1.0 - (double) compressionResult.totalBytesCompressed / compressionResult.totalBytesRead) * 100;
                 log.info("COMPRESSION RESULTS:");
                 log.info("  Original Size: {} bytes ({} MB)", compressionResult.totalBytesRead, compressionResult.totalBytesRead / 1024 / 1024);
                 log.info("  Compressed Size: {} bytes ({} MB)", compressionResult.totalBytesCompressed, compressionResult.totalBytesCompressed / 1024 / 1024);
-                log.info("  Compression Ratio: {:.2f}% saved",
-                        (1.0 - (double) compressionResult.totalBytesCompressed / compressionResult.totalBytesRead) * 100);
+                log.info("  Compression Ratio: {}% saved", String.format("%.2f", compressionRatioCalc));
                 log.info("  Duration: {} seconds", duration);
                 log.info("  Chunks Processed: {}", compressionResult.chunkCount);
 
@@ -204,10 +204,10 @@ public class FileUploadService {
         try {
             compressedFileSize = compressionService.compressFileToGzip(
                     tempOriginalPath,
-                    finalCompressedPath);
+                    finalCompressedPath,params.getChunkSize());
 
             double compressionRatio = (1.0 - (double) compressedFileSize / originalFileSize) * 100;
-            log.info("Compression complete: {:.2f}% compression achieved", compressionRatio);
+            log.info("Compression complete: {} compression achieved", compressionRatio);
 
         } finally {
             // Clean up temporary file
@@ -238,7 +238,7 @@ public class FileUploadService {
             int oldSampleCount = entry.getSampleCount();
             double oldSuccessRate = entry.getSuccessRate();
 
-            log.info("  Found existing record: SampleCount: {}, OldSuccessRate: {:.2f}%", oldSampleCount, oldSuccessRate * 100);
+            log.info("  Found existing record: SampleCount: {}, OldSuccessRate: {}", oldSampleCount, oldSuccessRate * 100);
 
             double newSuccessRate = (oldSuccessRate * oldSampleCount + (wasSuccessful ? 1 : 0)) / (oldSampleCount + 1);
 

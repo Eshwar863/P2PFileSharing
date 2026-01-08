@@ -8,4 +8,5 @@ public interface UserService {
     ResponseEntity<?> register(Users users);
 
     String verify(LoginDTO loginDTO);
+
 }

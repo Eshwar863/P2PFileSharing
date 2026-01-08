@@ -75,7 +75,7 @@ public class DownloadController {
             ChunkedDownloadResource resource = fileDownloadService.downloadFileWithAdaptiveChunking(
                     transferId,
                     networkSpeedMbps,
-                    latencyMs
+                    latencyMs,deviceType
             );
 
             if (resource == null) {
@@ -309,7 +309,7 @@ public class DownloadController {
                     transfer.getTransferId(),
                     networkSpeedMbps,
                     shareId,
-                    latencyMs
+                    latencyMs,deviceType
             );
 
             if (resource == null) {

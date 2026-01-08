@@ -22,5 +22,6 @@ import java.time.LocalDateTime;
         private Boolean success;
         private String message;
         private LocalDateTime uploadedAt;
+        private String status;
 
 }
